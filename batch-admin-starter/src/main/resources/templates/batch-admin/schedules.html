@@ -18,11 +18,18 @@
           <option value="" disabled selected>Choose a job…</option>
           <option th:each="j : ${jobs}" th:value="${j.name()}" th:text="${j.name()}">job</option>
         </select>
-        <input name="cron" class="cron-input" placeholder="0 0 2 * * *" required/>
+        <input name="cron" class="cron-input" placeholder="ex. tous les jours à 2h30" required/>
         <input name="description" placeholder="description (optional)"/>
         <button type="submit" class="btn btn-primary">Add schedule</button>
       </div>
-      <span class="hint">Spring cron: second minute hour day-of-month month day-of-week.</span>
+      <span class="hint">
+        Type a plain-language frequency — e.g. <em>« toutes les 5 minutes »</em>,
+        <em>« tous les jours à 2h30 »</em>, <em>« tous les lundis à 9h »</em>,
+        <em>« en semaine à 8h »</em>, <em>« le week-end à 10h »</em>,
+        <em>« tous les mois le 1 à 3h »</em>. A raw cron expression
+        (<code>0 0 2 * * *</code>) or a macro (<code>@daily</code>) also work. The resulting cron
+        is shown in the table below.
+      </span>
     </form>
 
     <table class="grid">
