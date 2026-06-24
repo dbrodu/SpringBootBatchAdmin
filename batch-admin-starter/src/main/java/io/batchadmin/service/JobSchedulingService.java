@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.batchadmin.domain.JobScheduleDao;
 import io.batchadmin.domain.JobScheduleRecord;
+import io.batchadmin.schedule.NaturalCronParser;
 import io.batchadmin.web.dto.ScheduleInfo;
 import io.batchadmin.web.dto.ScheduleRequest;
 import io.batchadmin.web.dto.StartJobRequest;
@@ -32,6 +33,7 @@ public class JobSchedulingService {
     private final JobScheduleDao scheduleDao;
     private final JobAdminService jobAdminService;
     private final ObjectMapper objectMapper;
+    private final NaturalCronParser cronParser = new NaturalCronParser();
     private final Map<Long, ScheduledFuture<?>> armed = new ConcurrentHashMap<>();
 
     public JobSchedulingService(TaskScheduler taskScheduler,
@@ -53,10 +55,10 @@ public class JobSchedulingService {
     }
 
     public ScheduleInfo createSchedule(ScheduleRequest request) {
-        validate(request);
+        String cron = validateAndResolveCron(request);
         JobScheduleRecord record = scheduleDao.insert(
                 request.jobName().trim(),
-                request.cron().trim(),
+                cron,
                 writeParameters(request.parameters()),
                 request.enabled() == null || request.enabled(),
                 request.description());
@@ -66,13 +68,13 @@ public class JobSchedulingService {
     }
 
     public ScheduleInfo updateSchedule(long id, ScheduleRequest request) {
-        validate(request);
+        String cron = validateAndResolveCron(request);
         JobScheduleRecord existing = require(id);
         boolean enabled = request.enabled() != null ? request.enabled() : existing.enabled();
         scheduleDao.update(
                 id,
                 request.jobName().trim(),
-                request.cron().trim(),
+                cron,
                 writeParameters(request.parameters()),
                 enabled,
                 request.description());
@@ -133,15 +135,22 @@ public class JobSchedulingService {
         }
     }
 
-    private void validate(ScheduleRequest request) {
+    /**
+     * Validates the request and resolves its frequency to a cron expression. The frequency may be a
+     * raw cron expression, a Spring macro ({@code @daily}, …) or a human-readable phrase such as
+     * "tous les jours à 2h30", which is converted via {@link NaturalCronParser}.
+     */
+    private String validateAndResolveCron(ScheduleRequest request) {
         if (request.jobName() == null || request.jobName().isBlank()) {
             throw BatchAdminException.badRequest("'jobName' is required");
         }
-        if (request.cron() == null || !CronExpression.isValidExpression(request.cron().trim())) {
-            throw BatchAdminException.badRequest("Invalid cron expression: " + request.cron());
-        }
         // Ensure the job is known so we fail fast on typos.
         jobAdminService.getJob(request.jobName().trim());
+        try {
+            return cronParser.toCron(request.cron());
+        } catch (IllegalArgumentException ex) {
+            throw BatchAdminException.badRequest(ex.getMessage());
+        }
     }
 
     private JobScheduleRecord require(long id) {

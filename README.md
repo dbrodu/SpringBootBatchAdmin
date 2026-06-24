@@ -89,8 +89,22 @@ notify  = log (message=done)
 Dynamically created jobs are **persisted** and re-registered on every restart.
 
 ### 3. Schedule jobs
-Any launchable job can be given a **cron schedule**. Schedules are persisted and re-armed on startup.
-Spring cron syntax is used (`second minute hour day-of-month month day-of-week`).
+Any launchable job can be given a **schedule**. Schedules are persisted and re-armed on startup.
+The frequency is entered in **plain language** (French or English) and converted to a Spring cron
+expression server-side — for example:
+
+| You type | Stored cron |
+| -------- | ----------- |
+| `toutes les 5 minutes` | `0 */5 * * * *` |
+| `tous les jours à 2h30` | `0 30 2 * * *` |
+| `tous les lundis à 9h` | `0 0 9 * * MON` |
+| `en semaine à 8h` | `0 0 8 * * MON-FRI` |
+| `le week-end à 10h` | `0 0 10 * * SAT,SUN` |
+| `tous les mois le 1 à 3h` | `0 0 3 1 * *` |
+
+A raw Spring cron expression (`second minute hour day-of-month month day-of-week`) or a macro
+(`@daily`, `@hourly`, …) is still accepted as-is. The resulting cron and the next fire time are shown
+in the schedules table. This conversion applies to both the GUI and the REST API.
 
 ### 4. Observe everything
 The dashboard aggregates jobs, dynamic jobs, active schedules, currently running executions and a
