@@ -12,8 +12,7 @@ dedicated route, everything you need to operate your jobs:
 It is meant as a lightweight, embedded replacement for **Spring Cloud Data Flow** inside a single
 Spring Boot Batch application.
 
-> This branch uses **Thymeleaf** for the GUI (everything embedded in one Spring Boot JAR). An
-> alternative Angular-based GUI lives on the `main` branch.
+See the **[CHANGELOG](CHANGELOG.md)** for the full list of features.
 
 ---
 
