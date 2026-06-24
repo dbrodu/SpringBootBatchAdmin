@@ -1,0 +1,28 @@
+package io.batchadmin;
+
+import org.springframework.boot.SpringBootConfiguration;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.job.builder.JobBuilder;
+import org.springframework.batch.core.launch.support.RunIdIncrementer;
+import org.springframework.batch.core.repository.JobRepository;
+import org.springframework.batch.core.step.builder.StepBuilder;
+import org.springframework.batch.repeat.RepeatStatus;
+import org.springframework.context.annotation.Bean;
+import org.springframework.transaction.PlatformTransactionManager;
+
+/** Minimal host application used to exercise the auto-configuration in tests. */
+@SpringBootConfiguration
+@EnableAutoConfiguration
+public class TestBatchApplication {
+
+    @Bean
+    public Job sampleTestJob(JobRepository jobRepository, PlatformTransactionManager transactionManager) {
+        return new JobBuilder("sampleTestJob", jobRepository)
+                .incrementer(new RunIdIncrementer())
+                .start(new StepBuilder("sampleTestJob.step", jobRepository)
+                        .tasklet((contribution, chunkContext) -> RepeatStatus.FINISHED, transactionManager)
+                        .build())
+                .build();
+    }
+}
