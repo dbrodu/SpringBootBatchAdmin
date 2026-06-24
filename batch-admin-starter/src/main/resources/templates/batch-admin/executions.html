@@ -34,6 +34,26 @@
         <tr th:if="${detail.steps().isEmpty()}"><td colspan="7" class="muted">No steps recorded.</td></tr>
       </tbody>
     </table>
+
+    <div th:if="${logsEnabled}" style="margin-top:18px">
+      <div class="toolbar">
+        <h4 style="margin:0">Execution logs</h4>
+        <form method="get" th:action="@{|${basePath}/executions|}" style="display:flex;gap:6px;align-items:center">
+          <input type="hidden" name="selected" th:value="${detail.executionId()}"/>
+          <label class="muted" for="logLevel">Min level</label>
+          <select id="logLevel" name="logLevel" onchange="this.form.submit()">
+            <option th:each="lvl : ${logLevels}" th:value="${lvl}" th:text="${lvl}"
+                    th:selected="${lvl == logLevel}">INFO</option>
+          </select>
+          <noscript><button type="submit" class="btn btn-small">Apply</button></noscript>
+        </form>
+      </div>
+      <pre class="logs"><th:block th:each="entry : ${logs}"><span
+        th:class="'log-' + ${entry.level().toLowerCase()}"
+        th:text="${@batchAdminFormat.date(entry.timestamp()) + '  ' + entry.level() + '  ' + entry.message()}">line</span>
+</th:block><span th:if="${logs.isEmpty()}" class="muted">No logs captured for this execution at this level.</span></pre>
+    </div>
+
     <p style="margin-top:10px"><a class="btn btn-small" th:href="@{|${basePath}/executions|}">Close</a></p>
   </div>
 

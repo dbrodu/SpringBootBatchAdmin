@@ -5,6 +5,7 @@ import io.batchadmin.dynamic.StepDefinition;
 import io.batchadmin.service.BatchAdminException;
 import io.batchadmin.service.DynamicJobService;
 import io.batchadmin.service.JobAdminService;
+import io.batchadmin.service.JobLogService;
 import io.batchadmin.service.JobSchedulingService;
 import io.batchadmin.service.ObservabilityService;
 import io.batchadmin.web.dto.CreateJobRequest;
@@ -44,17 +45,20 @@ public class BatchAdminViewController {
     private final DynamicJobService dynamicJobService;
     private final ObservabilityService observabilityService;
     private final ObjectProvider<JobSchedulingService> schedulingService;
+    private final ObjectProvider<JobLogService> jobLogService;
     private final String basePath;
 
     public BatchAdminViewController(JobAdminService jobAdminService,
                                     DynamicJobService dynamicJobService,
                                     ObservabilityService observabilityService,
                                     ObjectProvider<JobSchedulingService> schedulingService,
+                                    ObjectProvider<JobLogService> jobLogService,
                                     BatchAdminProperties properties) {
         this.jobAdminService = jobAdminService;
         this.dynamicJobService = dynamicJobService;
         this.observabilityService = observabilityService;
         this.schedulingService = schedulingService;
+        this.jobLogService = jobLogService;
         this.basePath = properties.getBasePath();
     }
 
@@ -95,12 +99,22 @@ public class BatchAdminViewController {
     }
 
     @GetMapping("/executions")
-    public String executions(@RequestParam(name = "selected", required = false) Long selected, Model model) {
+    public String executions(@RequestParam(name = "selected", required = false) Long selected,
+                             @RequestParam(name = "logLevel", required = false) String logLevel,
+                             Model model) {
         model.addAttribute("active", "executions");
         model.addAttribute("refresh", 5);
         model.addAttribute("executions", jobAdminService.recentExecutions(50));
+        JobLogService logs = jobLogService.getIfAvailable();
+        model.addAttribute("logsEnabled", logs != null);
         if (selected != null) {
             model.addAttribute("detail", jobAdminService.getExecution(selected));
+            if (logs != null) {
+                String level = (logLevel == null || logLevel.isBlank()) ? "INFO" : logLevel;
+                model.addAttribute("logLevel", level);
+                model.addAttribute("logLevels", logs.levels());
+                model.addAttribute("logs", logs.read(selected, level, 1000));
+            }
         }
         return "batch-admin/executions";
     }
