@@ -1,0 +1,324 @@
+package io.batchadmin.autoconfigure;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.batchadmin.domain.BatchAdminSchemaInitializer;
+import io.batchadmin.domain.JobDefinitionDao;
+import io.batchadmin.domain.JobScheduleDao;
+import io.batchadmin.dynamic.TaskletProvider;
+import io.batchadmin.dynamic.provider.CommandTaskletProvider;
+import io.batchadmin.dynamic.provider.LoggingTaskletProvider;
+import io.batchadmin.dynamic.provider.SleepTaskletProvider;
+import io.batchadmin.service.DynamicJobService;
+import io.batchadmin.service.JobAdminService;
+import io.batchadmin.service.JobSchedulingService;
+import io.batchadmin.service.ObservabilityService;
+import io.batchadmin.web.BatchAdminExceptionHandler;
+import io.batchadmin.web.BatchAdminUiController;
+import io.batchadmin.web.ExecutionController;
+import io.batchadmin.web.JobController;
+import io.batchadmin.web.ObservabilityController;
+import io.batchadmin.web.ScheduleController;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.binder.MeterBinder;
+import java.util.List;
+import javax.sql.DataSource;
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.configuration.DuplicateJobException;
+import org.springframework.batch.core.configuration.JobRegistry;
+import org.springframework.batch.core.configuration.support.ReferenceJobFactory;
+import org.springframework.batch.core.explore.JobExplorer;
+import org.springframework.batch.core.launch.JobLauncher;
+import org.springframework.batch.core.launch.JobOperator;
+import org.springframework.batch.core.launch.support.SimpleJobOperator;
+import org.springframework.batch.core.launch.support.TaskExecutorJobLauncher;
+import org.springframework.batch.core.repository.JobRepository;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.SmartInitializingSingleton;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.batch.BatchAutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
+import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.context.annotation.Bean;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
+import org.springframework.scheduling.TaskScheduler;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
+import org.springframework.transaction.PlatformTransactionManager;
+
+/**
+ * Self-initializing auto-configuration for the Spring Batch Admin component.
+ *
+ * <p>It activates automatically as soon as Spring Batch, a {@code DataSource} and Spring Web are on
+ * the classpath, registers the host application's existing {@code Job} beans so they are launchable,
+ * and wires the REST API plus the GUI under the configured base path. It stays agnostic of the jobs
+ * that already exist and never touches the host application's own JPA/transaction configuration.</p>
+ */
+@AutoConfiguration(after = {BatchAutoConfiguration.class, DataSourceAutoConfiguration.class,
+        JacksonAutoConfiguration.class})
+@ConditionalOnClass({Job.class, JobLauncher.class, DataSource.class})
+@ConditionalOnBean({JobRepository.class, JobExplorer.class, JobRegistry.class, DataSource.class})
+@ConditionalOnProperty(prefix = "batch.admin", name = "enabled", havingValue = "true", matchIfMissing = true)
+@EnableConfigurationProperties(BatchAdminProperties.class)
+public class BatchAdminAutoConfiguration {
+
+    // ----------------------------------------------------------------------------------------
+    // Persistence
+    // ----------------------------------------------------------------------------------------
+
+    @Bean
+    public BatchAdminSchemaInitializer batchAdminSchemaInitializer(DataSource dataSource) {
+        BatchAdminSchemaInitializer initializer = new BatchAdminSchemaInitializer(dataSource);
+        initializer.initialize();
+        return initializer;
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public JobDefinitionDao jobDefinitionDao(DataSource dataSource,
+                                             BatchAdminSchemaInitializer schemaInitializer) {
+        return new JobDefinitionDao(dataSource);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public JobScheduleDao jobScheduleDao(DataSource dataSource,
+                                         BatchAdminSchemaInitializer schemaInitializer) {
+        return new JobScheduleDao(dataSource);
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Batch launch / operate infrastructure
+    // ----------------------------------------------------------------------------------------
+
+    /** Asynchronous launcher so that "start on the fly" requests return immediately. */
+    @Bean(name = "batchAdminJobLauncher")
+    @ConditionalOnMissingBean(name = "batchAdminJobLauncher")
+    public JobLauncher batchAdminJobLauncher(JobRepository jobRepository) throws Exception {
+        TaskExecutorJobLauncher launcher = new TaskExecutorJobLauncher();
+        launcher.setJobRepository(jobRepository);
+        launcher.setTaskExecutor(new SimpleAsyncTaskExecutor("batch-admin-job-"));
+        launcher.afterPropertiesSet();
+        return launcher;
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(JobOperator.class)
+    public JobOperator batchAdminJobOperator(JobRepository jobRepository,
+                                             JobExplorer jobExplorer,
+                                             JobRegistry jobRegistry,
+                                             @org.springframework.beans.factory.annotation.Qualifier("batchAdminJobLauncher")
+                                             JobLauncher jobLauncher) throws Exception {
+        SimpleJobOperator operator = new SimpleJobOperator();
+        operator.setJobRepository(jobRepository);
+        operator.setJobExplorer(jobExplorer);
+        operator.setJobRegistry(jobRegistry);
+        operator.setJobLauncher(jobLauncher);
+        operator.afterPropertiesSet();
+        return operator;
+    }
+
+    /** Registers the host application's {@code Job} beans into the registry so they are launchable. */
+    @Bean
+    public SmartInitializingSingleton batchAdminJobBeanRegistrar(JobRegistry jobRegistry,
+                                                                 ObjectProvider<Job> jobs) {
+        return () -> jobs.forEach(job -> {
+            if (!jobRegistry.getJobNames().contains(job.getName())) {
+                try {
+                    jobRegistry.register(new ReferenceJobFactory(job));
+                } catch (DuplicateJobException ignored) {
+                    // Already registered by Boot; nothing to do.
+                }
+            }
+        });
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Default tasklet providers (host applications contribute their own as beans)
+    // ----------------------------------------------------------------------------------------
+
+    @Bean
+    public LoggingTaskletProvider loggingTaskletProvider() {
+        return new LoggingTaskletProvider();
+    }
+
+    @Bean
+    public SleepTaskletProvider sleepTaskletProvider(JobExplorer jobExplorer) {
+        return new SleepTaskletProvider(jobExplorer);
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "batch.admin.dynamic-jobs", name = "allow-command-tasklets",
+            havingValue = "true")
+    public CommandTaskletProvider commandTaskletProvider() {
+        return new CommandTaskletProvider();
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Services
+    // ----------------------------------------------------------------------------------------
+
+    @Bean
+    @ConditionalOnMissingBean
+    public JobAdminService jobAdminService(JobRegistry jobRegistry,
+                                           JobExplorer jobExplorer,
+                                           JobOperator jobOperator,
+                                           @org.springframework.beans.factory.annotation.Qualifier("batchAdminJobLauncher")
+                                           JobLauncher jobLauncher,
+                                           JobDefinitionDao jobDefinitionDao,
+                                           BatchAdminProperties properties) {
+        return new JobAdminService(jobRegistry, jobExplorer, jobOperator, jobLauncher,
+                jobDefinitionDao, properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public DynamicJobService dynamicJobService(JobRegistry jobRegistry,
+                                               JobRepository jobRepository,
+                                               PlatformTransactionManager transactionManager,
+                                               JobDefinitionDao jobDefinitionDao,
+                                               List<TaskletProvider> providers,
+                                               ObjectMapper objectMapper,
+                                               BatchAdminProperties properties) {
+        return new DynamicJobService(jobRegistry, jobRepository, transactionManager, jobDefinitionDao,
+                providers, objectMapper, properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ObservabilityService observabilityService(JobAdminService jobAdminService,
+                                                      JobRegistry jobRegistry,
+                                                      JobDefinitionDao jobDefinitionDao,
+                                                      JobScheduleDao jobScheduleDao,
+                                                      BatchAdminProperties properties) {
+        return new ObservabilityService(jobAdminService, jobRegistry, jobDefinitionDao,
+                jobScheduleDao, properties);
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Startup reload of persisted dynamic jobs and schedules
+    // ----------------------------------------------------------------------------------------
+
+    @Bean
+    public ApplicationListener<ApplicationReadyEvent> batchAdminStartupReloader(
+            DynamicJobService dynamicJobService,
+            ObjectProvider<JobSchedulingService> schedulingService) {
+        return event -> {
+            dynamicJobService.reloadPersistedJobs();
+            schedulingService.ifAvailable(JobSchedulingService::reloadSchedules);
+        };
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Scheduling (optional)
+    // ----------------------------------------------------------------------------------------
+
+    @org.springframework.context.annotation.Configuration(proxyBeanMethods = false)
+    @ConditionalOnProperty(prefix = "batch.admin.scheduling", name = "enabled", havingValue = "true",
+            matchIfMissing = true)
+    public static class SchedulingConfiguration {
+
+        @Bean(name = "batchAdminTaskScheduler")
+        @ConditionalOnMissingBean(name = "batchAdminTaskScheduler")
+        public TaskScheduler batchAdminTaskScheduler(BatchAdminProperties properties) {
+            ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+            scheduler.setPoolSize(properties.getScheduling().getPoolSize());
+            scheduler.setThreadNamePrefix("batch-admin-sched-");
+            scheduler.setWaitForTasksToCompleteOnShutdown(false);
+            scheduler.initialize();
+            return scheduler;
+        }
+
+        @Bean
+        @ConditionalOnMissingBean
+        public JobSchedulingService jobSchedulingService(
+                @org.springframework.beans.factory.annotation.Qualifier("batchAdminTaskScheduler")
+                TaskScheduler taskScheduler,
+                JobScheduleDao jobScheduleDao,
+                JobAdminService jobAdminService,
+                ObjectMapper objectMapper) {
+            return new JobSchedulingService(taskScheduler, jobScheduleDao, jobAdminService, objectMapper);
+        }
+
+        /**
+         * Declared alongside its service (rather than in {@code WebConfiguration}) so the controller
+         * is created exactly when scheduling is enabled, avoiding fragile cross-configuration
+         * {@code @ConditionalOnBean} ordering.
+         */
+        @Bean
+        @ConditionalOnWebApplication
+        public ScheduleController batchAdminScheduleController(JobSchedulingService schedulingService) {
+            return new ScheduleController(schedulingService);
+        }
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Web layer (REST controllers + GUI)
+    // ----------------------------------------------------------------------------------------
+
+    @org.springframework.context.annotation.Configuration(proxyBeanMethods = false)
+    @ConditionalOnWebApplication
+    public static class WebConfiguration {
+
+        @Bean
+        public JobController batchAdminJobController(JobAdminService jobAdminService,
+                                                     DynamicJobService dynamicJobService) {
+            return new JobController(jobAdminService, dynamicJobService);
+        }
+
+        @Bean
+        public ExecutionController batchAdminExecutionController(JobAdminService jobAdminService) {
+            return new ExecutionController(jobAdminService);
+        }
+
+        @Bean
+        public ObservabilityController batchAdminObservabilityController(
+                ObservabilityService observabilityService) {
+            return new ObservabilityController(observabilityService);
+        }
+
+        @Bean
+        public BatchAdminExceptionHandler batchAdminExceptionHandler() {
+            return new BatchAdminExceptionHandler();
+        }
+
+        @Bean
+        @ConditionalOnProperty(prefix = "batch.admin", name = "ui-enabled", havingValue = "true",
+                matchIfMissing = true)
+        public BatchAdminUiController batchAdminUiController(BatchAdminProperties properties) {
+            return new BatchAdminUiController(properties);
+        }
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Observability metrics (optional)
+    // ----------------------------------------------------------------------------------------
+
+    @org.springframework.context.annotation.Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(MeterRegistry.class)
+    @ConditionalOnProperty(prefix = "batch.admin.observability", name = "metrics-enabled",
+            havingValue = "true", matchIfMissing = true)
+    public static class MetricsConfiguration {
+
+        @Bean
+        public MeterBinder batchAdminMeterBinder(ObservabilityService observabilityService) {
+            return (MeterRegistry registry) -> {
+                Gauge.builder("batch.admin.executions.running", observabilityService,
+                                ObservabilityService::runningExecutions)
+                        .description("Number of currently running batch executions")
+                        .register(registry);
+                Gauge.builder("batch.admin.schedules.active", observabilityService,
+                                ObservabilityService::activeSchedules)
+                        .description("Number of enabled cron schedules")
+                        .register(registry);
+            };
+        }
+    }
+}

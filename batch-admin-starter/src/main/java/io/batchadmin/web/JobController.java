@@ -1,0 +1,80 @@
+package io.batchadmin.web;
+
+import io.batchadmin.service.DynamicJobService;
+import io.batchadmin.service.JobAdminService;
+import io.batchadmin.web.dto.CreateJobRequest;
+import io.batchadmin.web.dto.ExecutionSummary;
+import io.batchadmin.web.dto.JobSummary;
+import io.batchadmin.web.dto.ProviderInfo;
+import io.batchadmin.web.dto.StartJobRequest;
+import java.util.List;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * REST endpoints to discover, launch, create on the fly and delete jobs.
+ */
+@RestController
+@RequestMapping("${batch.admin.base-path:/batch-admin}/api/jobs")
+public class JobController {
+
+    private final JobAdminService jobAdminService;
+    private final DynamicJobService dynamicJobService;
+
+    public JobController(JobAdminService jobAdminService, DynamicJobService dynamicJobService) {
+        this.jobAdminService = jobAdminService;
+        this.dynamicJobService = dynamicJobService;
+    }
+
+    @GetMapping
+    public List<JobSummary> listJobs() {
+        return jobAdminService.listJobs();
+    }
+
+    /** Building blocks operators can compose into a job. Declared before {@code /{jobName}}. */
+    @GetMapping("/providers")
+    public List<ProviderInfo> listProviders() {
+        return dynamicJobService.listProviders();
+    }
+
+    @GetMapping("/{jobName}")
+    public JobSummary getJob(@PathVariable String jobName) {
+        return jobAdminService.getJob(jobName);
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public JobSummary createJob(@RequestBody CreateJobRequest request) {
+        String name = dynamicJobService.createJob(request);
+        return jobAdminService.getJob(name);
+    }
+
+    @DeleteMapping("/{jobName}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteJob(@PathVariable String jobName) {
+        dynamicJobService.deleteJob(jobName);
+    }
+
+    @PostMapping("/{jobName}/executions")
+    public ResponseEntity<ExecutionSummary> startJob(@PathVariable String jobName,
+                                                     @RequestBody(required = false) StartJobRequest request) {
+        ExecutionSummary execution = jobAdminService.startJob(
+                jobName, request != null ? request : new StartJobRequest(null));
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(execution);
+    }
+
+    @GetMapping("/{jobName}/executions")
+    public List<ExecutionSummary> listExecutions(@PathVariable String jobName,
+                                                 @RequestParam(defaultValue = "20") int limit) {
+        return jobAdminService.listExecutions(jobName, limit);
+    }
+}

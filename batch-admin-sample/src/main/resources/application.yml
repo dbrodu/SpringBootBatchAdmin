@@ -1,0 +1,51 @@
+spring:
+  application:
+    name: batch-admin-sample
+  datasource:
+    url: jdbc:h2:mem:batchadmin;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+  batch:
+    jdbc:
+      # Create the Spring Batch meta-data tables on startup (H2 in-memory).
+      initialize-schema: always
+    job:
+      # Do not auto-run any job at startup; jobs are launched on demand from the admin GUI/API.
+      enabled: false
+  h2:
+    console:
+      enabled: true
+
+server:
+  port: 8080
+
+# Spring Batch Admin component configuration (all optional; shown here for reference).
+batch:
+  admin:
+    enabled: true
+    base-path: /batch-admin
+    ui-enabled: true
+    scheduling:
+      enabled: true
+      pool-size: 4
+    dynamic-jobs:
+      enabled: true
+      # Set to true only in trusted environments: it allows OS command steps.
+      allow-command-tasklets: false
+    observability:
+      recent-executions-limit: 100
+      metrics-enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,batch
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    io.batchadmin: INFO
