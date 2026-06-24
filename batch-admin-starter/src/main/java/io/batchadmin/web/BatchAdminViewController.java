@@ -1,0 +1,310 @@
+package io.batchadmin.web;
+
+import io.batchadmin.autoconfigure.BatchAdminProperties;
+import io.batchadmin.dynamic.StepDefinition;
+import io.batchadmin.service.BatchAdminException;
+import io.batchadmin.service.DynamicJobService;
+import io.batchadmin.service.JobAdminService;
+import io.batchadmin.service.JobSchedulingService;
+import io.batchadmin.service.ObservabilityService;
+import io.batchadmin.web.dto.CreateJobRequest;
+import io.batchadmin.web.dto.ScheduleInfo;
+import io.batchadmin.web.dto.ScheduleRequest;
+import io.batchadmin.web.dto.StartJobRequest;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+
+/**
+ * Server-rendered Thymeleaf GUI for the admin component. Everything is produced by Spring Boot
+ * itself — there is no separate front-end to build or deploy. Actions are plain HTML form POSTs
+ * that redirect back (Post/Redirect/Get) so the GUI works without any client-side framework.
+ */
+@Controller
+@RequestMapping("${batch.admin.base-path:/batch-admin}")
+public class BatchAdminViewController {
+
+    private static final Pattern STEP_LINE =
+            Pattern.compile("^\\s*([^=]+?)\\s*=\\s*([^\\s(]+)\\s*(?:\\((.*)\\))?\\s*$");
+
+    private final JobAdminService jobAdminService;
+    private final DynamicJobService dynamicJobService;
+    private final ObservabilityService observabilityService;
+    private final ObjectProvider<JobSchedulingService> schedulingService;
+    private final String basePath;
+
+    public BatchAdminViewController(JobAdminService jobAdminService,
+                                    DynamicJobService dynamicJobService,
+                                    ObservabilityService observabilityService,
+                                    ObjectProvider<JobSchedulingService> schedulingService,
+                                    BatchAdminProperties properties) {
+        this.jobAdminService = jobAdminService;
+        this.dynamicJobService = dynamicJobService;
+        this.observabilityService = observabilityService;
+        this.schedulingService = schedulingService;
+        this.basePath = properties.getBasePath();
+    }
+
+    @ModelAttribute("basePath")
+    public String basePath() {
+        return basePath;
+    }
+
+    @ModelAttribute("schedulingEnabled")
+    public boolean schedulingEnabled() {
+        return schedulingService.getIfAvailable() != null;
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Pages
+    // ----------------------------------------------------------------------------------------
+
+    @GetMapping
+    public String dashboard(Model model) {
+        model.addAttribute("active", "dashboard");
+        model.addAttribute("refresh", 5);
+        model.addAttribute("summary", observabilityService.summary());
+        return "batch-admin/dashboard";
+    }
+
+    @GetMapping("/jobs")
+    public String jobs(Model model) {
+        model.addAttribute("active", "jobs");
+        model.addAttribute("jobs", jobAdminService.listJobs());
+        return "batch-admin/jobs";
+    }
+
+    @GetMapping("/jobs/new")
+    public String newJob(Model model) {
+        model.addAttribute("active", "create");
+        model.addAttribute("providers", dynamicJobService.listProviders());
+        return "batch-admin/create-job";
+    }
+
+    @GetMapping("/executions")
+    public String executions(@RequestParam(name = "selected", required = false) Long selected, Model model) {
+        model.addAttribute("active", "executions");
+        model.addAttribute("refresh", 5);
+        model.addAttribute("executions", jobAdminService.recentExecutions(50));
+        if (selected != null) {
+            model.addAttribute("detail", jobAdminService.getExecution(selected));
+        }
+        return "batch-admin/executions";
+    }
+
+    @GetMapping("/schedules")
+    public String schedules(Model model) {
+        model.addAttribute("active", "schedules");
+        JobSchedulingService scheduling = schedulingService.getIfAvailable();
+        model.addAttribute("schedules", scheduling != null ? scheduling.listSchedules() : List.of());
+        model.addAttribute("jobs", jobAdminService.listJobs().stream().filter(j -> j.launchable()).toList());
+        return "batch-admin/schedules";
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Job actions
+    // ----------------------------------------------------------------------------------------
+
+    @PostMapping("/jobs/{jobName}/start")
+    public String startJob(@PathVariable String jobName,
+                           @RequestParam(name = "parameters", required = false) String parameters,
+                           RedirectAttributes redirect) {
+        try {
+            var execution = jobAdminService.startJob(jobName, new StartJobRequest(parseParameters(parameters)));
+            flash(redirect, false, "Started '" + jobName + "' (execution #" + execution.executionId() + ").");
+        } catch (BatchAdminException ex) {
+            flash(redirect, true, ex.getMessage());
+        }
+        return redirect(redirect, "/jobs");
+    }
+
+    @PostMapping("/jobs")
+    public String createJob(@RequestParam String jobName,
+                            @RequestParam(required = false) String description,
+                            @RequestParam(required = false) String steps,
+                            RedirectAttributes redirect) {
+        try {
+            List<StepDefinition> stepDefinitions = parseSteps(steps);
+            String name = dynamicJobService.createJob(new CreateJobRequest(jobName, description, stepDefinitions));
+            flash(redirect, false, "Created job '" + name + "'.");
+            return redirect(redirect, "/jobs");
+        } catch (BatchAdminException | IllegalArgumentException ex) {
+            flash(redirect, true, ex.getMessage());
+            return redirect(redirect, "/jobs/new");
+        }
+    }
+
+    @PostMapping("/jobs/{jobName}/delete")
+    public String deleteJob(@PathVariable String jobName, RedirectAttributes redirect) {
+        try {
+            dynamicJobService.deleteJob(jobName);
+            flash(redirect, false, "Deleted job '" + jobName + "'.");
+        } catch (BatchAdminException ex) {
+            flash(redirect, true, ex.getMessage());
+        }
+        return redirect(redirect, "/jobs");
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Execution actions
+    // ----------------------------------------------------------------------------------------
+
+    @PostMapping("/executions/{id}/stop")
+    public String stop(@PathVariable long id, RedirectAttributes redirect) {
+        return executionAction(redirect, () -> jobAdminService.stop(id), "Stop requested for execution #" + id + ".");
+    }
+
+    @PostMapping("/executions/{id}/restart")
+    public String restart(@PathVariable long id, RedirectAttributes redirect) {
+        return executionAction(redirect, () -> jobAdminService.restart(id), "Restarted execution #" + id + ".");
+    }
+
+    @PostMapping("/executions/{id}/abandon")
+    public String abandon(@PathVariable long id, RedirectAttributes redirect) {
+        return executionAction(redirect, () -> jobAdminService.abandon(id), "Abandoned execution #" + id + ".");
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Schedule actions
+    // ----------------------------------------------------------------------------------------
+
+    @PostMapping("/schedules")
+    public String createSchedule(@RequestParam String jobName,
+                                 @RequestParam String cron,
+                                 @RequestParam(required = false) String description,
+                                 @RequestParam(required = false) String parameters,
+                                 RedirectAttributes redirect) {
+        JobSchedulingService scheduling = schedulingService.getIfAvailable();
+        if (scheduling == null) {
+            flash(redirect, true, "Scheduling is disabled.");
+            return redirect(redirect, "/schedules");
+        }
+        try {
+            scheduling.createSchedule(new ScheduleRequest(jobName, cron, description, true, parseParameters(parameters)));
+            flash(redirect, false, "Scheduled '" + jobName + "'.");
+        } catch (BatchAdminException ex) {
+            flash(redirect, true, ex.getMessage());
+        }
+        return redirect(redirect, "/schedules");
+    }
+
+    @PostMapping("/schedules/{id}/toggle")
+    public String toggleSchedule(@PathVariable long id, RedirectAttributes redirect) {
+        JobSchedulingService scheduling = schedulingService.getIfAvailable();
+        if (scheduling != null) {
+            try {
+                ScheduleInfo current = scheduling.getSchedule(id);
+                scheduling.setEnabled(id, !current.enabled());
+            } catch (BatchAdminException ex) {
+                flash(redirect, true, ex.getMessage());
+            }
+        }
+        return redirect(redirect, "/schedules");
+    }
+
+    @PostMapping("/schedules/{id}/delete")
+    public String deleteSchedule(@PathVariable long id, RedirectAttributes redirect) {
+        JobSchedulingService scheduling = schedulingService.getIfAvailable();
+        if (scheduling != null) {
+            try {
+                scheduling.deleteSchedule(id);
+                flash(redirect, false, "Removed schedule #" + id + ".");
+            } catch (BatchAdminException ex) {
+                flash(redirect, true, ex.getMessage());
+            }
+        }
+        return redirect(redirect, "/schedules");
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Helpers
+    // ----------------------------------------------------------------------------------------
+
+    private String executionAction(RedirectAttributes redirect, Runnable action, String successMessage) {
+        try {
+            action.run();
+            flash(redirect, false, successMessage);
+        } catch (BatchAdminException ex) {
+            flash(redirect, true, ex.getMessage());
+        }
+        return redirect(redirect, "/executions");
+    }
+
+    private void flash(RedirectAttributes redirect, boolean error, String message) {
+        redirect.addFlashAttribute("error", error);
+        redirect.addFlashAttribute("message", message);
+    }
+
+    private String redirect(RedirectAttributes redirect, String path) {
+        return "redirect:" + basePath + path;
+    }
+
+    /** Parses a textarea of {@code key=value} lines into a parameter map. */
+    static Map<String, String> parseParameters(String text) {
+        Map<String, String> map = new LinkedHashMap<>();
+        if (text == null || text.isBlank()) {
+            return map;
+        }
+        for (String line : text.split("\\R")) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            int eq = trimmed.indexOf('=');
+            if (eq <= 0) {
+                throw new IllegalArgumentException("Parameter line must be 'key=value': " + trimmed);
+            }
+            map.put(trimmed.substring(0, eq).trim(), trimmed.substring(eq + 1).trim());
+        }
+        return map;
+    }
+
+    /**
+     * Parses a textarea describing steps, one per line, in the form:
+     * {@code stepName = providerType (key=value, key2=value2)}. The properties block is optional.
+     */
+    static List<StepDefinition> parseSteps(String text) {
+        List<StepDefinition> steps = new ArrayList<>();
+        if (text == null || text.isBlank()) {
+            return steps;
+        }
+        for (String line : text.split("\\R")) {
+            if (line.trim().isEmpty()) {
+                continue;
+            }
+            Matcher matcher = STEP_LINE.matcher(line);
+            if (!matcher.matches()) {
+                throw new IllegalArgumentException(
+                        "Step line must be 'name = type (k=v, ...)': " + line.trim());
+            }
+            String name = matcher.group(1).trim();
+            String type = matcher.group(2).trim();
+            Map<String, Object> properties = new LinkedHashMap<>();
+            String props = matcher.group(3);
+            if (props != null && !props.isBlank()) {
+                for (String pair : props.split(",")) {
+                    int eq = pair.indexOf('=');
+                    if (eq <= 0) {
+                        throw new IllegalArgumentException("Property must be 'key=value': " + pair.trim());
+                    }
+                    properties.put(pair.substring(0, eq).trim(), pair.substring(eq + 1).trim());
+                }
+            }
+            steps.add(new StepDefinition(name, type, properties));
+        }
+        return steps;
+    }
+}

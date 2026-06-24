@@ -21,7 +21,7 @@ public class BatchAdminProperties {
      */
     private String basePath = "/batch-admin";
 
-    /** Whether the browser GUI (Angular app) is served from the application port. */
+    /** Whether the server-rendered Thymeleaf GUI is served from the application port. */
     private boolean uiEnabled = true;
 
     /** Scheduling (cron based) sub-configuration. */

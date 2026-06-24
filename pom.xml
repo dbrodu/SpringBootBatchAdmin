@@ -12,8 +12,9 @@
     <name>Spring Boot Batch Admin</name>
     <description>
         Job-agnostic administration component for Spring Batch jobs wrapped in Spring Boot.
-        Provides a REST API and an Angular GUI to create, run, stop, schedule and observe jobs.
-        A self-initializing replacement for Spring Cloud Data Flow inside a single Spring Boot Batch app.
+        Provides a REST API and a server-rendered Thymeleaf GUI to create, run, stop, schedule and
+        observe jobs. A self-initializing replacement for Spring Cloud Data Flow that embeds
+        everything in a single Spring Boot Batch app.
     </description>
 
     <parent>
@@ -27,6 +28,8 @@
         <module>batch-admin-starter</module>
         <module>batch-admin-sample</module>
     </modules>
+
+    <!-- GUI is server-rendered with Thymeleaf; no Node/Angular build is involved. -->
 
     <properties>
         <java.version>21</java.version>

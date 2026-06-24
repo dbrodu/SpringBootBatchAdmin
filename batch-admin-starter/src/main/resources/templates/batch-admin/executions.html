@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{batch-admin/fragments :: head('Batch Admin — Executions')}"></head>
+<body>
+<header th:replace="~{batch-admin/fragments :: nav('executions')}"></header>
+<main class="app-main">
+  <div th:replace="~{batch-admin/fragments :: banner}"></div>
+
+  <div class="toolbar">
+    <a class="btn" th:href="@{|${basePath}/executions|}">↻ Refresh</a>
+    <span class="muted">Auto-refreshes every 5s.</span>
+  </div>
+
+  <div class="panel" th:if="${detail}">
+    <h3 th:text="|Execution #${detail.executionId()} — ${detail.jobName()}|">Execution</h3>
+    <p>
+      <span th:class="${@batchAdminFormat.statusClass(detail.status())}" th:text="${detail.status()}">COMPLETED</span>
+      <span class="muted" th:if="${detail.exitDescription() != null and !detail.exitDescription().isBlank()}"
+            th:text="${detail.exitDescription()}"></span>
+    </p>
+    <p class="muted" th:text="${'Parameters: ' + @batchAdminFormat.params(detail.parameters())}">Parameters:</p>
+    <table class="grid grid-inner">
+      <thead><tr><th>Step</th><th>Status</th><th>Read</th><th>Write</th><th>Commit</th><th>Skip</th><th>Duration</th></tr></thead>
+      <tbody>
+        <tr th:each="s : ${detail.steps()}">
+          <td th:text="${s.stepName()}">step</td>
+          <td><span th:class="${@batchAdminFormat.statusClass(s.status())}" th:text="${s.status()}">COMPLETED</span></td>
+          <td th:text="${s.readCount()}">0</td>
+          <td th:text="${s.writeCount()}">0</td>
+          <td th:text="${s.commitCount()}">0</td>
+          <td th:text="${s.skipCount()}">0</td>
+          <td th:text="${@batchAdminFormat.duration(s.durationMs())}">—</td>
+        </tr>
+        <tr th:if="${detail.steps().isEmpty()}"><td colspan="7" class="muted">No steps recorded.</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:10px"><a class="btn btn-small" th:href="@{|${basePath}/executions|}">Close</a></p>
+  </div>
+
+  <table class="grid">
+    <thead>
+      <tr><th>#</th><th>Job</th><th>Status</th><th>Params</th><th>Started</th><th>Duration</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      <tr th:each="e : ${executions}">
+        <td><a th:href="@{|${basePath}/executions?selected=${e.executionId()}|}" th:text="${e.executionId()}">1</a></td>
+        <td th:text="${e.jobName()}">job</td>
+        <td><span th:class="${@batchAdminFormat.statusClass(e.status())}" th:text="${e.status()}">COMPLETED</span></td>
+        <td class="muted" th:text="${@batchAdminFormat.params(e.parameters())}"></td>
+        <td th:text="${@batchAdminFormat.date(e.startTime() != null ? e.startTime() : e.createTime())}">—</td>
+        <td th:text="${@batchAdminFormat.duration(e.durationMs())}">—</td>
+        <td class="actions">
+          <form th:if="${e.running()}" th:action="@{|${basePath}/executions/${e.executionId()}/stop|}" method="post" style="display:inline">
+            <button type="submit" class="btn btn-small">⏹ Stop</button>
+          </form>
+          <form th:if="${e.restartable()}" th:action="@{|${basePath}/executions/${e.executionId()}/restart|}" method="post" style="display:inline">
+            <button type="submit" class="btn btn-small">↻ Restart</button>
+          </form>
+        </td>
+      </tr>
+      <tr th:if="${executions.isEmpty()}"><td colspan="7" class="muted">No executions.</td></tr>
+    </tbody>
+  </table>
+</main>
+<footer th:replace="~{batch-admin/fragments :: footer}"></footer>
+</body>
+</html>
