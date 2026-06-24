@@ -12,7 +12,7 @@
 
     <artifactId>spring-boot-batch-admin-starter</artifactId>
     <name>Spring Boot Batch Admin :: Starter</name>
-    <description>Auto-configured, job-agnostic Spring Batch administration (REST API + Angular GUI).</description>
+    <description>Auto-configured, job-agnostic Spring Batch administration (REST API + Thymeleaf GUI).</description>
 
     <dependencies>
         <!-- Core: the component activates only when Spring Batch is present -->
@@ -23,6 +23,11 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <!-- Server-rendered GUI: everything ships inside the Spring Boot app, no separate front-end. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-thymeleaf</artifactId>
         </dependency>
         <!-- Persistence of dynamic job definitions and schedules via plain JDBC, so the
              component never interferes with the host application's own JPA/ORM configuration. -->
@@ -64,55 +69,5 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-
-    <profiles>
-        <!--
-            Reproducible build of the Angular GUI from ../batch-admin-ui into this module's
-            static resources. Not active by default: the prebuilt assets are committed so the
-            standard `mvn install` needs no Node. Run `mvn -Pui ...` to rebuild the GUI.
-        -->
-        <profile>
-            <id>ui</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>com.github.eirslett</groupId>
-                        <artifactId>frontend-maven-plugin</artifactId>
-                        <version>1.15.1</version>
-                        <configuration>
-                            <workingDirectory>${project.basedir}/../batch-admin-ui</workingDirectory>
-                            <nodeVersion>v22.11.0</nodeVersion>
-                        </configuration>
-                        <executions>
-                            <execution>
-                                <id>install-node-and-npm</id>
-                                <goals>
-                                    <goal>install-node-and-npm</goal>
-                                </goals>
-                            </execution>
-                            <execution>
-                                <id>npm-install</id>
-                                <goals>
-                                    <goal>npm</goal>
-                                </goals>
-                                <configuration>
-                                    <arguments>ci</arguments>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <id>npm-build</id>
-                                <goals>
-                                    <goal>npm</goal>
-                                </goals>
-                                <configuration>
-                                    <arguments>run build</arguments>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-    </profiles>
 
 </project>

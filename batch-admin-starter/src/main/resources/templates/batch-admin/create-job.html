@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{batch-admin/fragments :: head('Batch Admin — Create job')}"></head>
+<body>
+<header th:replace="~{batch-admin/fragments :: nav('create')}"></header>
+<main class="app-main">
+  <div th:replace="~{batch-admin/fragments :: banner}"></div>
+
+  <form class="panel" th:action="@{|${basePath}/jobs|}" method="post">
+    <h3>Create a job on the fly</h3>
+    <p class="muted">
+      Compose a job from the building blocks (tasklet providers) exposed by the application.
+      It is registered immediately and becomes launchable and schedulable.
+    </p>
+
+    <label class="field">
+      <span>Job name</span>
+      <input name="jobName" placeholder="e.g. nightlyExport" required/>
+    </label>
+    <label class="field">
+      <span>Description (optional)</span>
+      <input name="description" placeholder="optional"/>
+    </label>
+
+    <label class="field" style="max-width:680px">
+      <span>Steps — one per line: <code>name = type (key=value, key2=value2)</code></span>
+      <textarea name="steps" placeholder="extract = log (message=Extracting)&#10;wait = sleep (millis=2000)&#10;done = log (message=Finished)"></textarea>
+      <span class="hint">The properties block is optional, e.g. <code>cleanup = sleep</code>.</span>
+    </label>
+
+    <button type="submit" class="btn btn-primary">Create job</button>
+  </form>
+
+  <div class="panel">
+    <h4>Available building blocks</h4>
+    <table class="grid">
+      <thead><tr><th>Type</th><th>Name</th><th>Properties</th></tr></thead>
+      <tbody>
+        <tr th:each="p : ${providers}">
+          <td><code th:text="${p.type()}">log</code></td>
+          <td th:text="${p.displayName()}">Log a message</td>
+          <td class="muted" th:text="${@batchAdminFormat.params(p.properties())}">message=...</td>
+        </tr>
+        <tr th:if="${providers.isEmpty()}"><td colspan="3" class="muted">No providers available.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+<footer th:replace="~{batch-admin/fragments :: footer}"></footer>
+</body>
+</html>

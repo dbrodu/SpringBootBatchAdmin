@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{batch-admin/fragments :: head('Batch Admin — Schedules')}"></head>
+<body>
+<header th:replace="~{batch-admin/fragments :: nav('schedules')}"></header>
+<main class="app-main">
+  <div th:replace="~{batch-admin/fragments :: banner}"></div>
+
+  <div class="panel" th:unless="${schedulingEnabled}">
+    <p class="muted">Scheduling is disabled (<code>batch.admin.scheduling.enabled=false</code>).</p>
+  </div>
+
+  <div th:if="${schedulingEnabled}">
+    <form class="panel" th:action="@{|${basePath}/schedules|}" method="post">
+      <h3>Schedule a job</h3>
+      <div class="inline-form">
+        <select name="jobName" required>
+          <option value="" disabled selected>Choose a job…</option>
+          <option th:each="j : ${jobs}" th:value="${j.name()}" th:text="${j.name()}">job</option>
+        </select>
+        <input name="cron" class="cron-input" placeholder="0 0 2 * * *" required/>
+        <input name="description" placeholder="description (optional)"/>
+        <button type="submit" class="btn btn-primary">Add schedule</button>
+      </div>
+      <span class="hint">Spring cron: second minute hour day-of-month month day-of-week.</span>
+    </form>
+
+    <table class="grid">
+      <thead>
+        <tr><th>Job</th><th>Cron</th><th>Next run</th><th>Parameters</th><th>Enabled</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        <tr th:each="s : ${schedules}">
+          <td th:text="${s.jobName()}">job</td>
+          <td>
+            <code th:text="${s.cron()}">0 0 2 * * *</code>
+            <div class="muted" th:if="${s.description()}" th:text="${s.description()}"></div>
+          </td>
+          <td th:text="${@batchAdminFormat.date(s.nextExecution())}">—</td>
+          <td class="muted" th:text="${@batchAdminFormat.params(s.parameters())}"></td>
+          <td>
+            <span class="badge" th:classappend="${s.enabled()} ? 'badge-ok' : 'badge-idle'"
+                  th:text="${s.enabled()} ? 'on' : 'off'">on</span>
+          </td>
+          <td class="actions">
+            <form th:action="@{|${basePath}/schedules/${s.id()}/toggle|}" method="post" style="display:inline">
+              <button type="submit" class="btn btn-small" th:text="${s.enabled()} ? 'Disable' : 'Enable'">Disable</button>
+            </form>
+            <form th:action="@{|${basePath}/schedules/${s.id()}/delete|}" method="post"
+                  onsubmit="return confirm('Delete this schedule?');" style="display:inline">
+              <button type="submit" class="btn btn-small btn-danger">Delete</button>
+            </form>
+          </td>
+        </tr>
+        <tr th:if="${schedules.isEmpty()}"><td colspan="6" class="muted">No schedules defined.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+<footer th:replace="~{batch-admin/fragments :: footer}"></footer>
+</body>
+</html>
