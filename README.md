@@ -54,6 +54,10 @@ launchable, serves its Thymeleaf GUI, and never touches your application's own J
 configuration (its own state is persisted through plain JDBC in two `BATCH_ADMIN_*` tables created
 automatically). The GUI pulls in `spring-boot-starter-thymeleaf` transitively.
 
+> **Migrating existing jobs?** See the **[Migration guide](docs/MIGRATION.md)** — a step-by-step
+> walkthrough for onboarding your current Spring Batch jobs (discovery, launching, parameters,
+> stop/restart, security, logs and scheduling), with a checklist and troubleshooting table.
+
 ---
 
 ## What it does
