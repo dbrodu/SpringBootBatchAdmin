@@ -1,0 +1,13 @@
+{
+  "name": "batch-admin-screenshots",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Headless-browser screenshots of the Spring Batch Admin Thymeleaf GUI.",
+  "type": "module",
+  "scripts": {
+    "screenshots": "node capture-screenshots.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.56.1"
+  }
+}

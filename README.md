@@ -174,6 +174,43 @@ batch:
 
 ---
 
+## Screenshots
+
+The server-rendered GUI (captured with `scripts/take-screenshots.sh`):
+
+| | |
+| --- | --- |
+| **Dashboard** | **Jobs** |
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Jobs](docs/screenshots/jobs.png) |
+| **Create job** | **Executions** |
+| ![Create job](docs/screenshots/create-job.png) | ![Executions](docs/screenshots/executions.png) |
+| **Schedules** | |
+| ![Schedules](docs/screenshots/schedules.png) | |
+
+Regenerate them at any time (builds the app, starts it, smoke-tests every page, seeds demo data,
+captures all screens with headless Chromium, then stops the app):
+
+```bash
+scripts/take-screenshots.sh
+```
+
+---
+
+## Development in Claude Code on the web
+
+A `SessionStart` hook (`.claude/hooks/session-start.sh`, registered in `.claude/settings.json`)
+prepares remote web sessions so tests and screenshots work immediately. It:
+
+1. warms the Maven dependency cache and builds the modules (`mvn -DskipTests install`), so
+   `mvn test` runs fast and offline;
+2. installs Playwright and reuses the environment's pre-installed Chromium (falling back to a
+   download only if needed) for `scripts/take-screenshots.sh`.
+
+The hook runs **synchronously** (the session starts once setup is complete) and only in the remote
+environment. Once it is on your default branch, every future web session uses it.
+
+---
+
 ## Requirements
 
 - Java 21+
