@@ -74,6 +74,38 @@ class BatchAdminIntegrationTest {
     }
 
     @Test
+    void capturesAndReadsExecutionLogsWithLevelFilter() {
+        CreateJobRequest request = new CreateJobRequest("logJob", "logs test",
+                List.of(new StepDefinition("say", "log", Map.of("message", "hello-from-logs"))));
+        rest.postForEntity(api("/jobs"), request, JobSummary.class);
+
+        ResponseEntity<ExecutionSummary> started = rest.postForEntity(api("/jobs/logJob/executions"),
+                Map.of("parameters", Map.of()), ExecutionSummary.class);
+        long executionId = started.getBody().executionId();
+
+        Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+            ExecutionSummary execution = rest.getForObject(api("/executions/" + executionId), ExecutionSummary.class);
+            assertThat(execution.status()).isEqualTo("COMPLETED");
+        });
+
+        Awaitility.await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
+            ResponseEntity<List<Map<String, Object>>> logs = rest.exchange(
+                    api("/executions/" + executionId + "/logs?level=INFO"), HttpMethod.GET, null,
+                    new ParameterizedTypeReference<>() {
+                    });
+            assertThat(logs.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(logs.getBody()).anyMatch(e -> String.valueOf(e.get("message")).contains("hello-from-logs"));
+        });
+
+        // Raising the minimum level to ERROR filters the INFO entry out.
+        ResponseEntity<List<Map<String, Object>>> errorLogs = rest.exchange(
+                api("/executions/" + executionId + "/logs?level=ERROR"), HttpMethod.GET, null,
+                new ParameterizedTypeReference<>() {
+                });
+        assertThat(errorLogs.getBody()).noneMatch(e -> String.valueOf(e.get("message")).contains("hello-from-logs"));
+    }
+
+    @Test
     void schedulesAndRemovesACronJob() {
         ScheduleRequest request = new ScheduleRequest("sampleTestJob", "0 0 3 * * *", "nightly", true, Map.of());
         ResponseEntity<ScheduleInfo> created = rest.postForEntity(api("/schedules"), request, ScheduleInfo.class);
