@@ -95,4 +95,16 @@ class BatchAdminIntegrationTest {
         ResponseEntity<String> response = rest.postForEntity(api("/schedules"), request, String.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
+
+    @Test
+    void servesTheThymeleafGui() {
+        ResponseEntity<String> dashboard = rest.getForEntity("/batch-admin", String.class);
+        assertThat(dashboard.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(dashboard.getHeaders().getContentType().toString()).startsWith("text/html");
+        assertThat(dashboard.getBody()).contains("Spring Batch Admin");
+
+        ResponseEntity<String> jobs = rest.getForEntity("/batch-admin/jobs", String.class);
+        assertThat(jobs.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(jobs.getBody()).contains("sampleTestJob");
+    }
 }

@@ -5,12 +5,15 @@ self-initializes when your application starts and exposes, on the application's 
 dedicated route, everything you need to operate your jobs:
 
 - **create jobs on the fly** from reusable building blocks;
-- **administer jobs from a browser GUI** (an Angular app) served at a dedicated route;
+- **administer jobs from a browser GUI** — a **server-rendered Thymeleaf UI**, so the whole thing
+  ships inside a single Spring Boot application with no separate front-end to build or deploy;
 - **expose the full observability** required to run those jobs (REST + Micrometer metrics).
 
 It is meant as a lightweight, embedded replacement for **Spring Cloud Data Flow** inside a single
-Spring Boot Batch application, with the orchestration GUI written as an Angular component you can
-also drop into your own Angular front-end.
+Spring Boot Batch application.
+
+> This branch uses **Thymeleaf** for the GUI (everything embedded in one Spring Boot JAR). An
+> alternative Angular-based GUI lives on the `main` branch.
 
 ---
 
@@ -18,8 +21,7 @@ also drop into your own Angular front-end.
 
 | Module | Description |
 | ------ | ----------- |
-| `batch-admin-starter` | The auto-configured, reusable component: REST API, dynamic job engine, scheduler, observability, and the bundled Angular GUI. |
-| `batch-admin-ui` | The Angular orchestration component (source). Builds into the starter's static resources. |
+| `batch-admin-starter` | The auto-configured, reusable component: REST API, dynamic job engine, scheduler, observability, and the server-rendered Thymeleaf GUI. |
 | `batch-admin-sample` | A runnable demo Spring Boot Batch application that includes the starter and declares a couple of jobs. |
 
 ---
@@ -27,14 +29,11 @@ also drop into your own Angular front-end.
 ## Quick start
 
 ```bash
-# Build everything (uses the prebuilt Angular GUI committed in the starter)
 mvn -q -DskipTests install
-
-# Run the sample app
 java -jar batch-admin-sample/target/spring-boot-batch-admin-sample-0.1.0-SNAPSHOT.jar
 ```
 
-Then open the GUI at **http://localhost:8080/batch-admin** and the REST API under
+Open the GUI at **http://localhost:8080/batch-admin** and the REST API under
 **http://localhost:8080/batch-admin/api**.
 
 ### Use it in your own app
@@ -51,15 +50,16 @@ Add the dependency to any Spring Boot Batch application:
 
 That is all. The component auto-configures itself as soon as Spring Batch, a `DataSource` and Spring
 Web are on the classpath. It discovers your existing `Job` beans, registers them so they are
-launchable, and never touches your application's own JPA/transaction configuration (its own state is
-persisted through plain JDBC, in two `BATCH_ADMIN_*` tables created automatically).
+launchable, serves its Thymeleaf GUI, and never touches your application's own JPA/transaction
+configuration (its own state is persisted through plain JDBC in two `BATCH_ADMIN_*` tables created
+automatically). The GUI pulls in `spring-boot-starter-thymeleaf` transitively.
 
 ---
 
 ## What it does
 
 ### 1. Administer existing jobs
-Your jobs — declared as ordinary Spring beans — are discovered automatically. From the API or GUI you
+Your jobs — declared as ordinary Spring beans — are discovered automatically. From the GUI or API you
 can **start** them (asynchronously, so the call returns immediately), **stop** a running execution,
 **restart** a failed/stopped one, **abandon**, and browse the full execution/step history.
 
@@ -78,44 +78,62 @@ public class ImportFileTaskletProvider implements TaskletProvider {
 }
 ```
 
-Operators then assemble these blocks into a multi-step job from the GUI. Dynamically created jobs are
-**persisted** and re-registered on every restart.
+In the GUI's **Create job** screen you describe the steps, one per line:
+
+```
+extract = import-file (path=/in/data.csv)
+wait    = sleep (millis=2000)
+notify  = log (message=done)
+```
+
+Dynamically created jobs are **persisted** and re-registered on every restart.
 
 ### 3. Schedule jobs
-Any launchable job can be given one or more **cron schedules**. Schedules are persisted and re-armed
-on startup. Spring cron syntax is used (`second minute hour day-of-month month day-of-week`).
+Any launchable job can be given a **cron schedule**. Schedules are persisted and re-armed on startup.
+Spring cron syntax is used (`second minute hour day-of-month month day-of-week`).
 
 ### 4. Observe everything
-A dashboard aggregates jobs, dynamic jobs, active schedules, currently running executions and a
-status breakdown, plus a live feed of recent executions with per-step read/write/commit/skip
-counters. Job timing is additionally published to **Micrometer** (`spring.batch.job` timers, plus
-`batch.admin.executions.running` and `batch.admin.schedules.active` gauges), available through
-Spring Boot Actuator.
+The dashboard aggregates jobs, dynamic jobs, active schedules, currently running executions and a
+status breakdown, plus a live feed (auto-refreshing) of recent executions with per-step
+read/write/commit/skip counters. Job timing is additionally published to **Micrometer**
+(`spring.batch.job` timers, plus `batch.admin.executions.running` and `batch.admin.schedules.active`
+gauges), available through Spring Boot Actuator.
+
+---
+
+## GUI routes
+
+The browser GUI is served under `${batch.admin.base-path}` (default `/batch-admin`):
+
+| Path | Screen |
+| ---- | ------ |
+| `/batch-admin` | Dashboard |
+| `/batch-admin/jobs` | Jobs list, start & delete |
+| `/batch-admin/jobs/new` | Create a job on the fly |
+| `/batch-admin/executions` | Executions & step detail |
+| `/batch-admin/schedules` | Cron schedules |
+
+All actions are plain HTML form POSTs that redirect back (Post/Redirect/Get) — no client-side
+framework or JavaScript build is involved.
 
 ---
 
 ## REST API
 
-All paths are relative to `${batch.admin.base-path}/api` (default `/batch-admin/api`).
+The same capabilities are available as a JSON API under `${batch.admin.base-path}/api`
+(default `/batch-admin/api`), useful for automation:
 
 | Method & path | Purpose |
 | ------------- | ------- |
-| `GET /jobs` | List all jobs |
-| `GET /jobs/{name}` | Job detail |
-| `GET /jobs/providers` | Available building blocks (tasklet providers) |
-| `POST /jobs` | Create a job on the fly |
-| `DELETE /jobs/{name}` | Delete a dynamic job |
-| `POST /jobs/{name}/executions` | Start a job (async); body `{ "parameters": { ... } }` |
+| `GET /jobs` · `GET /jobs/{name}` | List / detail |
+| `GET /jobs/providers` | Available building blocks |
+| `POST /jobs` · `DELETE /jobs/{name}` | Create / delete a dynamic job |
+| `POST /jobs/{name}/executions` | Start a job (async) |
 | `GET /jobs/{name}/executions` | Execution history of a job |
-| `GET /executions?limit=` | Recent executions across all jobs |
-| `GET /executions/{id}` | Execution detail with steps |
-| `POST /executions/{id}/stop` | Stop a running execution |
-| `POST /executions/{id}/restart` | Restart a failed/stopped execution |
-| `POST /executions/{id}/abandon` | Abandon an execution |
-| `GET /schedules` · `POST /schedules` | List / create cron schedules |
-| `PUT /schedules/{id}` · `PUT /schedules/{id}/enabled?value=` · `DELETE /schedules/{id}` | Update / toggle / delete |
+| `GET /executions?limit=` · `GET /executions/{id}` | Recent / detail with steps |
+| `POST /executions/{id}/stop` · `/restart` · `/abandon` | Control an execution |
+| `GET /schedules` · `POST /schedules` · `PUT /schedules/{id}/enabled?value=` · `DELETE /schedules/{id}` | Manage schedules |
 | `GET /observability/summary` | Dashboard snapshot |
-| `GET /observability/last-status` | Last status per job |
 
 ---
 
@@ -128,7 +146,7 @@ batch:
   admin:
     enabled: true                 # master switch
     base-path: /batch-admin       # route for the GUI and (with /api) the REST API
-    ui-enabled: true              # serve the Angular GUI from the app port
+    ui-enabled: true              # serve the Thymeleaf GUI
     scheduling:
       enabled: true
       pool-size: 4
@@ -142,34 +160,8 @@ batch:
 
 ---
 
-## Developing the Angular GUI
-
-The GUI lives in `batch-admin-ui` and builds straight into the starter's
-`src/main/resources/static/batch-admin`. The compiled assets are committed so a plain `mvn install`
-needs no Node.
-
-```bash
-cd batch-admin-ui
-npm install
-npm run build          # production build into the starter's static resources
-npm start              # dev server on :4200, proxying the API to :8080
-```
-
-To rebuild the GUI as part of the Maven build (downloads Node automatically):
-
-```bash
-mvn -Pui -q -DskipTests install
-```
-
-The Angular pieces (`BatchAdminService`, the models and the standalone components) are reusable, so
-you can embed the same orchestration component inside your own Angular front-end by pointing
-`BATCH_ADMIN_API_BASE` at your backend.
-
----
-
 ## Requirements
 
 - Java 21+
 - A relational `DataSource` (the component creates its two tables with `CREATE TABLE IF NOT EXISTS`;
   H2 and PostgreSQL are supported out of the box)
-- Node 22+ only if you want to rebuild the GUI

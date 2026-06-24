@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{batch-admin/fragments :: head('Batch Admin — Jobs')}"></head>
+<body>
+<header th:replace="~{batch-admin/fragments :: nav('jobs')}"></header>
+<main class="app-main">
+  <div th:replace="~{batch-admin/fragments :: banner}"></div>
+
+  <div class="toolbar">
+    <a class="btn" th:href="@{|${basePath}/jobs|}">↻ Refresh</a>
+    <a class="btn btn-primary" th:href="@{|${basePath}/jobs/new|}">+ Create job</a>
+  </div>
+
+  <table class="grid">
+    <thead>
+      <tr><th>Job</th><th>Type</th><th>Instances</th><th>Last status</th><th>Last run</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      <tr th:each="job : ${jobs}">
+        <td th:text="${job.name()}">job</td>
+        <td>
+          <span class="tag" th:if="${job.dynamic()}">dynamic</span>
+          <span class="tag tag-muted" th:unless="${job.dynamic()}">declared</span>
+          <span class="tag tag-warn" th:unless="${job.launchable()}">unregistered</span>
+        </td>
+        <td th:text="${job.instanceCount()}">0</td>
+        <td><span th:class="${@batchAdminFormat.statusClass(job.lastStatus())}"
+                  th:text="${job.lastStatus() != null ? job.lastStatus() : '—'}">—</span></td>
+        <td th:text="${@batchAdminFormat.date(job.lastExecution())}">—</td>
+        <td class="actions">
+          <details>
+            <summary class="btn btn-primary btn-small" th:if="${job.launchable()}">▶ Start</summary>
+            <form th:action="@{|${basePath}/jobs/${job.name()}/start|}" method="post" class="panel" style="margin-top:8px">
+              <label class="field">
+                <span>Parameters (one <code>key=value</code> per line, optional)</span>
+                <textarea name="parameters" placeholder="region=EU&#10;mode=full"></textarea>
+              </label>
+              <button type="submit" class="btn btn-primary">Launch</button>
+            </form>
+          </details>
+          <form th:if="${job.dynamic()}" th:action="@{|${basePath}/jobs/${job.name()}/delete|}" method="post"
+                onsubmit="return confirm('Delete this dynamic job?');" style="display:inline">
+            <button type="submit" class="btn btn-danger btn-small">🗑 Delete</button>
+          </form>
+        </td>
+      </tr>
+      <tr th:if="${jobs.isEmpty()}"><td colspan="6" class="muted">No jobs found.</td></tr>
+    </tbody>
+  </table>
+</main>
+<footer th:replace="~{batch-admin/fragments :: footer}"></footer>
+</body>
+</html>

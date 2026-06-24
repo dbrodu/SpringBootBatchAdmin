@@ -13,7 +13,8 @@ import io.batchadmin.service.JobAdminService;
 import io.batchadmin.service.JobSchedulingService;
 import io.batchadmin.service.ObservabilityService;
 import io.batchadmin.web.BatchAdminExceptionHandler;
-import io.batchadmin.web.BatchAdminUiController;
+import io.batchadmin.web.BatchAdminFormat;
+import io.batchadmin.web.BatchAdminViewController;
 import io.batchadmin.web.ExecutionController;
 import io.batchadmin.web.JobController;
 import io.batchadmin.web.ObservabilityController;
@@ -292,8 +293,21 @@ public class BatchAdminAutoConfiguration {
         @Bean
         @ConditionalOnProperty(prefix = "batch.admin", name = "ui-enabled", havingValue = "true",
                 matchIfMissing = true)
-        public BatchAdminUiController batchAdminUiController(BatchAdminProperties properties) {
-            return new BatchAdminUiController(properties);
+        public BatchAdminFormat batchAdminFormat() {
+            return new BatchAdminFormat();
+        }
+
+        @Bean
+        @ConditionalOnProperty(prefix = "batch.admin", name = "ui-enabled", havingValue = "true",
+                matchIfMissing = true)
+        public BatchAdminViewController batchAdminViewController(
+                JobAdminService jobAdminService,
+                DynamicJobService dynamicJobService,
+                ObservabilityService observabilityService,
+                org.springframework.beans.factory.ObjectProvider<JobSchedulingService> schedulingService,
+                BatchAdminProperties properties) {
+            return new BatchAdminViewController(jobAdminService, dynamicJobService, observabilityService,
+                    schedulingService, properties);
         }
     }
 
