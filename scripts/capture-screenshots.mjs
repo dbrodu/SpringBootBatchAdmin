@@ -19,6 +19,7 @@ const screens = [
   { name: 'jobs', path: '/jobs' },
   { name: 'create-job', path: '/jobs/new' },
   { name: 'executions', path: '/executions' },
+  { name: 'execution-logs', path: '/executions?selected=1&logLevel=INFO' },
   { name: 'schedules', path: '/schedules' },
 ];
 

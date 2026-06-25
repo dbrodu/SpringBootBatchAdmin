@@ -209,8 +209,8 @@ The server-rendered GUI (captured with `scripts/take-screenshots.sh`):
 | ![Dashboard](docs/screenshots/dashboard.png) | ![Jobs](docs/screenshots/jobs.png) |
 | **Create job** | **Executions** |
 | ![Create job](docs/screenshots/create-job.png) | ![Executions](docs/screenshots/executions.png) |
-| **Schedules** | |
-| ![Schedules](docs/screenshots/schedules.png) | |
+| **Execution detail & logs** | **Schedules** |
+| ![Execution logs](docs/screenshots/execution-logs.png) | ![Schedules](docs/screenshots/schedules.png) |
 
 Regenerate them at any time (builds the app, starts it, smoke-tests every page, seeds demo data,
 captures all screens with headless Chromium, then stops the app):
