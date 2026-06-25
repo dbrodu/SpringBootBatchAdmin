@@ -6,85 +6,173 @@
   <meta th:if="${refresh}" http-equiv="refresh" th:attr="content=${refresh}"/>
   <title th:text="${title}">Spring Batch Admin</title>
   <style>
+    /* ============================================================
+       International typographic style — inspired by PilotHelper v3
+       (homage to Josef Müller-Brockmann): Helvetica, grid, Swiss red,
+       cream paper, warm ink, objectivity, zero ornament.
+       ============================================================ */
     :root {
-      --bg:#f5f6f8; --panel:#fff; --border:#e2e5ea; --text:#1f2733; --muted:#7a8595;
-      --primary:#2f6df6; --primary-dark:#1f57d6; --danger:#e2483a; --ok:#1f9d57; --warn:#d98a16; --run:#2f6df6;
+      --font:"Helvetica Neue",Helvetica,Arial,"Inter",system-ui,sans-serif;
+      --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+      --r-sm:6px; --r-md:9px; --r-lg:14px; --r-full:999px;
+      --bg:#faf9f5; --surface:#ffffff; --surface-2:#f5f3ec; --surface-3:#efece3;
+      --border:#e8e5dc; --border-strong:#d4d0c5;
+      --text:#1a1812; --muted:#57544c; --muted-2:#928e83;
+      --primary:#e2231a; --primary-weak:#fbe5e2; --primary-strong:#c01a12; --ring:0 0 0 3px var(--primary-weak);
+      --accent:#1d4ed8; --accent-weak:#e6ebfc;
+      --amber:#b0760f; --amber-weak:#f6ecd6;
+      --red:#e2231a; --red-weak:#fbe5e2;
+      --ink:#1a1812; --ink-weak:#ebe8e0;
+      --shadow-1:0 1px 2px rgba(26,24,18,.05),0 1px 1px rgba(26,24,18,.03);
+      --shadow-2:0 6px 22px rgba(26,24,18,.08),0 2px 6px rgba(26,24,18,.05);
+      --shadow-3:0 24px 64px rgba(26,24,18,.20);
+      --header-bg:color-mix(in srgb,var(--bg) 82%,transparent);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg:#131210; --surface:#1b1a18; --surface-2:#232220; --surface-3:#2a2926;
+        --border:#2f2e2b; --border-strong:#3d3b37;
+        --text:#f3f1ea; --muted:#b3b0a8; --muted-2:#7d7a71;
+        --primary:#ff4a40; --primary-weak:#2c1614; --primary-strong:#ff6f66;
+        --accent:#6f9bff; --accent-weak:#172139;
+        --amber:#e0a23a; --amber-weak:#2c2410;
+        --red:#ff4a40; --red-weak:#2c1614;
+        --ink:#f3f1ea; --ink-weak:#262522;
+        --shadow-1:0 1px 2px rgba(0,0,0,.35);
+        --shadow-2:0 8px 26px rgba(0,0,0,.45),0 2px 8px rgba(0,0,0,.35);
+        --shadow-3:0 28px 70px rgba(0,0,0,.6);
+        --header-bg:color-mix(in srgb,var(--bg) 80%,transparent);
+      }
     }
     * { box-sizing:border-box; }
-    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
-      background:var(--bg); color:var(--text); font-size:14px; }
-    a { color:var(--primary); text-decoration:none; }
-    .app-header { background:var(--panel); border-bottom:1px solid var(--border); padding:0 24px;
-      display:flex; align-items:center; gap:32px; position:sticky; top:0; z-index:5; }
-    .brand { font-weight:700; font-size:18px; padding:16px 0; white-space:nowrap; }
-    .tabs { display:flex; gap:4px; }
-    .tabs a { padding:18px 14px; color:var(--muted); border-bottom:3px solid transparent; }
-    .tabs a.active { color:var(--primary); border-bottom-color:var(--primary); font-weight:600; }
-    .app-main { padding:24px; max-width:1100px; margin:0 auto; }
-    .app-footer { text-align:center; color:var(--muted); padding:24px; font-size:12px; }
-    .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:16px; margin-bottom:24px; }
-    .card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:20px;
-      display:flex; flex-direction:column; gap:6px; }
-    .card-live { border-color:var(--primary); box-shadow:0 0 0 2px rgba(47,109,246,.12); }
-    .card-value { font-size:30px; font-weight:700; }
-    .card-label { color:var(--muted); }
-    table.grid { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--border);
-      border-radius:10px; overflow:hidden; }
-    .grid th, .grid td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:middle; }
-    .grid th { background:#fafbfc; font-weight:600; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
-    .grid tr:last-child td { border-bottom:none; }
-    .grid-inner { margin-top:8px; }
-    .subrow { background:#fafbfc; }
-    .actions { display:flex; gap:6px; flex-wrap:wrap; }
-    .btn { background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:7px 12px;
-      cursor:pointer; font-size:13px; color:var(--text); display:inline-block; }
-    .btn:hover { border-color:var(--muted); }
-    .btn:disabled { opacity:.5; cursor:not-allowed; }
-    .btn-small { padding:4px 8px; font-size:12px; }
-    .btn-primary { background:var(--primary); border-color:var(--primary); color:#fff; }
-    .btn-primary:hover { background:var(--primary-dark); }
-    .btn-danger { color:var(--danger); border-color:#f1c6c1; background:#fff; }
-    .toolbar { display:flex; align-items:center; gap:12px; margin-bottom:14px; }
-    .badge { display:inline-block; padding:3px 9px; border-radius:999px; font-size:12px; font-weight:600; }
-    .badge-ok { background:#e3f6ec; color:var(--ok); }
-    .badge-run { background:#e6effe; color:var(--run); }
-    .badge-fail { background:#fce6e3; color:var(--danger); }
-    .badge-warn { background:#fbf0db; color:var(--warn); }
-    .badge-idle { background:#eef0f3; color:var(--muted); }
-    .tag { display:inline-block; padding:2px 8px; border-radius:6px; font-size:11px; background:#e6effe; color:var(--run); }
-    .tag-muted { background:#eef0f3; color:var(--muted); }
-    .tag-warn { background:#fbf0db; color:var(--warn); }
+    html, body { margin:0; padding:0; }
+    body { font-family:var(--font); background:var(--bg); color:var(--text); font-size:14px; line-height:1.55;
+      -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; min-height:100vh; }
+    h3 { margin:0 0 14px; font-weight:700; letter-spacing:-.02em; font-size:16px; }
+    h4 { margin:14px 0 8px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted-2); }
+    a { color:var(--primary); text-decoration:none; transition:color .12s ease; }
+    a:hover { color:var(--primary-strong); }
+    ::selection { background:var(--primary); color:#fff; }
     .muted { color:var(--muted); }
-    .panel { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:20px; margin-bottom:20px; }
-    .field { display:flex; flex-direction:column; gap:4px; margin-bottom:12px; max-width:520px; }
-    .field span { color:var(--muted); font-size:12px; }
-    input, select, textarea { padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:13px;
-      background:#fff; color:var(--text); font-family:inherit; }
-    textarea { min-height:120px; font-family:'SF Mono',Menlo,Consolas,monospace; }
-    input:focus, select:focus, textarea:focus { outline:none; border-color:var(--primary); }
+
+    /* Top bar (glass) */
+    .app-header { background:var(--header-bg); border-bottom:1px solid var(--border); padding:0 28px;
+      display:flex; align-items:center; gap:26px; position:sticky; top:0; z-index:20;
+      backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); }
+    .brand { display:flex; align-items:center; gap:12px; padding:13px 0; white-space:nowrap; }
+    .brand-mark { width:34px; height:34px; border-radius:var(--r-md); flex:0 0 auto; background:var(--primary);
+      display:grid; place-items:center; box-shadow:var(--shadow-1); }
+    .brand-mark svg { width:18px; height:18px; stroke:#fff; stroke-width:1.9; fill:none; stroke-linecap:round; stroke-linejoin:round; }
+    .brand-name { font-size:15px; font-weight:700; letter-spacing:-.01em; }
+    .tabs { display:flex; gap:2px; flex-wrap:wrap; }
+    .tabs a { padding:8px 13px; border-radius:var(--r-sm); color:var(--muted); font-size:13.5px; font-weight:500;
+      letter-spacing:.01em; transition:background .12s ease, color .12s ease; }
+    .tabs a:hover { background:var(--surface-2); color:var(--text); }
+    .tabs a.active { background:var(--primary-weak); color:var(--primary-strong); font-weight:600; }
+
+    .app-main { padding:34px 32px 90px; max-width:1280px; margin:0 auto; }
+    .app-footer { text-align:center; color:var(--muted-2); padding:30px; font-size:12px; }
+
+    /* KPI cards */
+    .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:16px; margin-bottom:26px; }
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); padding:18px 20px;
+      display:flex; flex-direction:column; gap:2px; box-shadow:var(--shadow-1);
+      transition:box-shadow .15s, transform .15s, border-color .15s; }
+    .card:hover { box-shadow:var(--shadow-2); border-color:var(--border-strong); transform:translateY(-1px); }
+    .card-live { border-color:var(--primary); box-shadow:0 0 0 1px var(--primary-weak), var(--shadow-1); }
+    .card-value { font-size:34px; font-weight:780; letter-spacing:-.035em; line-height:1.05; margin-top:6px;
+      font-family:var(--mono); font-variant-numeric:tabular-nums; }
+    .card-label { font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted-2); }
+
+    /* Tables */
+    table.grid { width:100%; border-collapse:separate; border-spacing:0; background:var(--surface);
+      border:1px solid var(--border); border-radius:var(--r-md); overflow:hidden; box-shadow:var(--shadow-1); }
+    .grid th, .grid td { text-align:left; padding:12px 14px; border-bottom:1px solid var(--border); vertical-align:middle; }
+    .grid th { background:var(--surface); font-size:10.5px; font-weight:700; letter-spacing:.07em;
+      text-transform:uppercase; color:var(--muted-2); }
+    .grid tbody tr { transition:background .1s; }
+    .grid tbody tr:hover td { background:var(--surface-2); }
+    .grid tr:last-child td { border-bottom:none; }
+    .grid-inner { margin-top:10px; box-shadow:none; }
+    .subrow { background:var(--surface-2); }
+    .subrow:hover td { background:var(--surface-2) !important; }
+
+    /* Buttons */
+    .actions { display:flex; gap:5px; flex-wrap:wrap; }
+    .btn { display:inline-flex; align-items:center; gap:7px; border:1px solid var(--border-strong);
+      background:var(--surface); color:var(--text); padding:8px 14px; border-radius:var(--r-sm);
+      font-size:13px; font-weight:560; letter-spacing:.005em; cursor:pointer; transition:.13s; white-space:nowrap; }
+    .btn:hover { border-color:var(--primary); color:var(--primary); transform:translateY(-1px); }
+    .btn:active { transform:none; }
+    .btn:disabled { opacity:.45; pointer-events:none; }
+    .btn-small { padding:5px 10px; font-size:12px; gap:5px; }
+    .btn-primary { background:var(--primary); border-color:var(--primary); color:#fff; box-shadow:0 3px 10px rgba(226,35,26,.25); }
+    .btn-primary:hover { background:var(--primary-strong); border-color:var(--primary-strong); color:#fff; }
+    .btn-danger { color:var(--text); }
+    .btn-danger:hover { border-color:var(--red); color:var(--red); background:var(--red-weak); }
+    .toolbar { display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
+
+    /* Chips / badges (mono, Swiss) */
+    .badge { display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:var(--r-full);
+      font-family:var(--mono); font-size:11.5px; font-weight:600; letter-spacing:.01em; }
+    .badge-ok { background:var(--ink-weak); color:var(--ink); }
+    .badge-run { background:var(--accent-weak); color:var(--accent); }
+    .badge-fail { background:var(--red-weak); color:var(--red); }
+    .badge-warn { background:var(--amber-weak); color:var(--amber); }
+    .badge-idle { background:var(--surface-2); color:var(--muted); border:1px solid var(--border); }
+    .tag { display:inline-block; padding:1px 7px; border-radius:5px; font-family:var(--mono); font-size:11px;
+      background:var(--surface-2); color:var(--muted); border:1px solid var(--border); }
+    .tag-muted { background:var(--surface-2); color:var(--muted-2); }
+    .tag-warn { background:var(--amber-weak); color:var(--amber); border-color:transparent; }
+
+    /* Panels & forms */
+    .panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md);
+      padding:20px 22px; margin-bottom:20px; box-shadow:var(--shadow-1); }
+    .field { display:flex; flex-direction:column; gap:6px; margin-bottom:14px; max-width:520px; }
+    .field span { font-size:12px; font-weight:600; color:var(--muted); }
+    input, select, textarea { font-family:inherit; font-size:14px; padding:10px 12px; border:1px solid var(--border-strong);
+      border-radius:var(--r-sm); background:var(--surface); color:var(--text); transition:.12s; }
+    textarea { min-height:120px; font-family:var(--mono); line-height:1.55; resize:vertical; }
+    input:focus, select:focus, textarea:focus { outline:none; border-color:var(--primary); box-shadow:var(--ring); }
     .inline-form { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-    .cron-input { font-family:'SF Mono',Menlo,Consolas,monospace; min-width:200px; }
-    .status-bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:24px; }
-    code { font-family:'SF Mono',Menlo,Consolas,monospace; background:#eef0f3; padding:1px 5px; border-radius:4px; }
-    .hint { color:var(--muted); font-size:12px; display:block; margin-top:6px; }
-    .banner { padding:12px 16px; border-radius:8px; margin-bottom:18px; }
-    .banner-ok { background:#e3f6ec; color:var(--ok); border:1px solid #b8e6cb; }
-    .banner-err { background:#fce6e3; color:var(--danger); border:1px solid #f1c6c1; }
-    h3 { margin:0 0 12px; } h4 { margin:12px 0 8px; color:var(--muted); }
+    .cron-input { font-family:var(--mono); min-width:220px; }
+    .status-bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:26px; align-items:center; }
+    code { font-family:var(--mono); font-size:.92em; background:var(--surface-2); border:1px solid var(--border);
+      padding:1px 6px; border-radius:5px; }
+    .hint { color:var(--muted-2); font-size:11.5px; display:block; margin-top:6px; line-height:1.6; }
+
+    /* Banner (flash) */
+    .banner { padding:11px 16px; border-radius:var(--r-sm); margin-bottom:18px; font-weight:550; font-size:13px;
+      border:1px solid transparent; }
+    .banner-ok { background:var(--ink-weak); color:var(--ink); border-color:var(--border-strong); }
+    .banner-err { background:var(--red-weak); color:var(--red); border-color:color-mix(in srgb,var(--red) 35%,transparent); }
+
     details summary { cursor:pointer; }
-    pre.logs { background:#0f1620; color:#d7dde6; border-radius:8px; padding:14px 16px; overflow:auto;
-      max-height:420px; font-family:'SF Mono',Menlo,Consolas,monospace; font-size:12px; line-height:1.5;
-      white-space:pre-wrap; word-break:break-word; }
+
+    /* Logs terminal — warm ink */
+    pre.logs { background:#1c1a14; color:#e8e5dc; border:1px solid #2f2e2b; border-radius:var(--r-sm);
+      padding:14px 16px; overflow:auto; max-height:440px; font-family:var(--mono); font-size:12px;
+      line-height:1.65; white-space:pre-wrap; word-break:break-word; }
     pre.logs span { display:block; }
-    .log-warn { color:#f0c25a; }
-    .log-error { color:#ff8f7a; }
-    .log-debug, .log-trace { color:#8aa0b4; }
+    pre.logs span:hover { background:rgba(255,255,255,.04); }
+    .log-warn { color:#e0a23a; }
+    .log-error { color:#ff6f66; }
+    .log-debug, .log-trace { color:#928e83; }
+
+    :focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
+    input:focus-visible, select:focus-visible, textarea:focus-visible { outline:none; }
+    @media (prefers-reduced-motion:reduce) { * { transition-duration:.01ms !important; } }
   </style>
 </head>
 <body>
 
 <header th:fragment="nav(active)" class="app-header">
-  <div class="brand">⚙️ Spring Batch Admin</div>
+  <div class="brand">
+    <span class="brand-mark">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </span>
+    <span class="brand-name">Spring Batch Admin</span>
+  </div>
   <nav class="tabs">
     <a th:href="@{|${basePath}|}" th:classappend="${active == 'dashboard'} ? 'active'">Dashboard</a>
     <a th:href="@{|${basePath}/jobs|}" th:classappend="${active == 'jobs'} ? 'active'">Jobs</a>
