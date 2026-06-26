@@ -81,7 +81,8 @@ public class ImportFileTaskletProvider implements TaskletProvider {
 }
 ```
 
-In the GUI's **Create job** screen you describe the steps, one per line:
+In the GUI's **Create job** screen you describe the steps, one per line (a building-block **picker**
+inserts them for you, and **▲ / ▼** controls reorder them):
 
 ```
 extract = import-file (path=/in/data.csv)
