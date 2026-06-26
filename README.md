@@ -91,6 +91,9 @@ notify  = log (message=done)
 
 Dynamically created jobs are **persisted** and re-registered on every restart.
 
+> **Adding your own building block?** See the **[Building blocks guide](docs/BUILDING_BLOCKS.md)** — a
+> step-by-step walkthrough of the `TaskletProvider` and `StepProvider` SPIs, with worked examples.
+
 Beyond tasklet building blocks, richer **chunk-oriented step types** can be contributed (the
 `StepProvider` SPI). One ships out of the box: **`sql-export`** — a paged SQL query → JSON → target
 (OpenSearch via its `_bulk` API, or the log for a dry run). The **Create job** screen has a dedicated
