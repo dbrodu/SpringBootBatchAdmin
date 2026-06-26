@@ -49,6 +49,8 @@
           </details>
           <a th:if="${job.dynamic()}" th:href="@{|${basePath}/jobs/${job.name()}/edit|}"
              class="btn btn-small">✎ Edit</a>
+          <a th:if="${job.dynamic()}" th:href="@{|${basePath}/jobs/${job.name()}/history|}"
+             class="btn btn-small">🕑 History</a>
           <form th:action="@{|${basePath}/jobs/${job.name()}/clone|}" method="post"
                 style="display:inline-flex; gap:4px; align-items:center">
             <input name="newName" th:value="${job.name()} + '-copy'" class="cron-input"

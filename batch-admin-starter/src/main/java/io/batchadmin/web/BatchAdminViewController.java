@@ -11,6 +11,7 @@ import io.batchadmin.service.ObservabilityService;
 import io.batchadmin.web.dto.CreateJobRequest;
 import io.batchadmin.web.dto.ImportResult;
 import io.batchadmin.web.dto.JobPreview;
+import io.batchadmin.web.dto.JobVersionInfo;
 import io.batchadmin.web.dto.ScheduleInfo;
 import io.batchadmin.web.dto.ScheduleRequest;
 import io.batchadmin.web.dto.StartJobRequest;
@@ -317,6 +318,31 @@ public class BatchAdminViewController {
             flash(redirect, true, ex.getMessage());
         }
         return redirect(redirect, "/jobs");
+    }
+
+    @GetMapping("/jobs/{jobName}/history")
+    public String jobHistory(@PathVariable String jobName, Model model, RedirectAttributes redirect) {
+        try {
+            model.addAttribute("active", "jobs");
+            model.addAttribute("jobName", jobName);
+            model.addAttribute("versions", dynamicJobService.listVersions(jobName));
+            return "batch-admin/job-history";
+        } catch (BatchAdminException ex) {
+            flash(redirect, true, ex.getMessage());
+            return redirect(redirect, "/jobs");
+        }
+    }
+
+    @PostMapping("/jobs/{jobName}/rollback")
+    public String rollbackJob(@PathVariable String jobName, @RequestParam int version,
+                              RedirectAttributes redirect) {
+        try {
+            dynamicJobService.rollbackJob(jobName, version);
+            flash(redirect, false, "Rolled '" + jobName + "' back to version " + version + ".");
+        } catch (BatchAdminException ex) {
+            flash(redirect, true, ex.getMessage());
+        }
+        return redirect(redirect, "/jobs/" + jobName + "/history");
     }
 
     /** Downloads every dynamic job's definition as a JSON document. */

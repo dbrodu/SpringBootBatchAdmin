@@ -37,6 +37,16 @@ public class BatchAdminSchemaInitializer {
                 )""".formatted(identity, textType));
 
         jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS BATCH_ADMIN_JOB_DEFINITION_VERSION (
+                    ID %s PRIMARY KEY,
+                    JOB_NAME VARCHAR(200) NOT NULL,
+                    VERSION_NUMBER INTEGER NOT NULL,
+                    DESCRIPTION VARCHAR(1000),
+                    STEPS_JSON %s NOT NULL,
+                    CREATED_AT TIMESTAMP NOT NULL
+                )""".formatted(identity, textType));
+
+        jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS BATCH_ADMIN_JOB_SCHEDULE (
                     ID %s PRIMARY KEY,
                     JOB_NAME VARCHAR(200) NOT NULL,
