@@ -56,6 +56,12 @@
       <span class="hint">The properties block is optional, e.g. <code>cleanup = sleep</code>.</span>
     </label>
 
+    <div class="field" style="max-width:680px">
+      <span>Step order</span>
+      <div id="step-order" style="display:flex; flex-direction:column; gap:4px"></div>
+      <span class="hint">Use ▲ / ▼ to reorder steps without editing the text above.</span>
+    </div>
+
     <div class="inline-form">
       <button type="submit" th:formaction="@{|${basePath}/jobs/preview|}" class="btn">👁 Preview steps</button>
       <button type="submit" class="btn btn-primary"
@@ -82,27 +88,80 @@
 
   <script th:inline="none">
     (function () {
-      var picker = document.getElementById('block-picker');
       var steps = document.getElementById('steps-input');
-      if (!picker) { return; }
       if (!steps) { return; }
-      picker.addEventListener('change', function () {
-        var type = picker.value;
-        if (!type) { return; }
-        var base = type.replace(/^job:/, '').split(/[.:]/).pop().replace(/[^A-Za-z0-9]/g, '');
-        if (!base) { base = 'step'; }
-        var name = base;
-        var n = 2;
-        while (new RegExp('(^|\\n)\\s*' + name + '\\s*=', 'i').test(steps.value)) {
-          name = base + n;
-          n = n + 1;
+      var order = document.getElementById('step-order');
+
+      function getLines() {
+        return steps.value.split('\n').filter(function (l) { return l.trim() !== ''; });
+      }
+      function setLines(lines) {
+        steps.value = lines.length ? lines.join('\n') + '\n' : '';
+      }
+      function move(from, to) {
+        var lines = getLines();
+        if (to === -1 || to === lines.length) { return; }
+        var moved = lines.splice(from, 1)[0];
+        lines.splice(to, 0, moved);
+        setLines(lines);
+        renderOrder();
+      }
+      function renderOrder() {
+        if (!order) { return; }
+        order.textContent = '';
+        var lines = getLines();
+        if (lines.length === 0) {
+          var empty = document.createElement('span');
+          empty.className = 'muted';
+          empty.textContent = 'No steps yet.';
+          order.appendChild(empty);
+          return;
         }
-        var current = steps.value.replace(/\s+$/, '');
-        var line = name + ' = ' + type;
-        steps.value = (current ? current + '\n' : '') + line + '\n';
-        steps.focus();
-        picker.selectedIndex = 0;
-      });
+        lines.forEach(function (line, i) {
+          var row = document.createElement('div');
+          row.style.display = 'flex';
+          row.style.gap = '6px';
+          row.style.alignItems = 'center';
+          var up = document.createElement('button');
+          up.type = 'button'; up.className = 'btn btn-small'; up.textContent = '▲';
+          up.disabled = (i === 0);
+          up.addEventListener('click', function () { move(i, i - 1); });
+          var down = document.createElement('button');
+          down.type = 'button'; down.className = 'btn btn-small'; down.textContent = '▼';
+          down.disabled = (i === lines.length - 1);
+          down.addEventListener('click', function () { move(i, i + 1); });
+          var label = document.createElement('code');
+          label.textContent = line.trim();
+          row.appendChild(up);
+          row.appendChild(down);
+          row.appendChild(label);
+          order.appendChild(row);
+        });
+      }
+      steps.addEventListener('input', renderOrder);
+      renderOrder();
+
+      var picker = document.getElementById('block-picker');
+      if (picker) {
+        picker.addEventListener('change', function () {
+          var type = picker.value;
+          if (!type) { return; }
+          var base = type.replace(/^job:/, '').split(/[.:]/).pop().replace(/[^A-Za-z0-9]/g, '');
+          if (!base) { base = 'step'; }
+          var name = base;
+          var n = 2;
+          while (new RegExp('(^|\\n)\\s*' + name + '\\s*=', 'i').test(steps.value)) {
+            name = base + n;
+            n = n + 1;
+          }
+          var current = steps.value.replace(/\s+$/, '');
+          var line = name + ' = ' + type;
+          steps.value = (current ? current + '\n' : '') + line + '\n';
+          steps.focus();
+          picker.selectedIndex = 0;
+          renderOrder();
+        });
+      }
     })();
   </script>
 
