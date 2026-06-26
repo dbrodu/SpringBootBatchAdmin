@@ -147,10 +147,11 @@ public class BatchAdminViewController {
     public String updateJob(@PathVariable String jobName,
                             @RequestParam(required = false) String description,
                             @RequestParam(required = false) String steps,
+                            @RequestParam(required = false) String note,
                             RedirectAttributes redirect) {
         try {
             List<StepDefinition> stepDefinitions = parseSteps(steps);
-            dynamicJobService.updateJob(jobName, new CreateJobRequest(jobName, description, stepDefinitions));
+            dynamicJobService.updateJob(jobName, new CreateJobRequest(jobName, description, stepDefinitions), note);
             flash(redirect, false, "Updated job '" + jobName + "'.");
             return redirect(redirect, "/jobs");
         } catch (BatchAdminException | IllegalArgumentException ex) {
@@ -260,10 +261,12 @@ public class BatchAdminViewController {
     public String createJob(@RequestParam String jobName,
                             @RequestParam(required = false) String description,
                             @RequestParam(required = false) String steps,
+                            @RequestParam(required = false) String note,
                             RedirectAttributes redirect) {
         try {
             List<StepDefinition> stepDefinitions = parseSteps(steps);
-            String name = dynamicJobService.createJob(new CreateJobRequest(jobName, description, stepDefinitions));
+            String name = dynamicJobService.createJob(
+                    new CreateJobRequest(jobName, description, stepDefinitions), note);
             flash(redirect, false, "Created job '" + name + "'.");
             return redirect(redirect, "/jobs");
         } catch (BatchAdminException | IllegalArgumentException ex) {

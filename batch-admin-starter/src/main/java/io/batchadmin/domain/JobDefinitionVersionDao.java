@@ -27,6 +27,9 @@ public class JobDefinitionVersionDao {
                     rs.getInt("VERSION_NUMBER"),
                     rs.getString("DESCRIPTION"),
                     rs.getString("STEPS_JSON"),
+                    rs.getString("AUTHOR"),
+                    rs.getString("CHANGE_TYPE"),
+                    rs.getString("CHANGE_NOTE"),
                     toInstant(rs.getTimestamp("CREATED_AT")));
 
     private final JdbcTemplate jdbc;
@@ -43,25 +46,31 @@ public class JobDefinitionVersionDao {
         return (max == null ? 0 : max) + 1;
     }
 
-    /** Appends a snapshot and returns it. */
-    public JobDefinitionVersionRecord save(String jobName, int version, String description, String stepsJson) {
+    /** Appends a snapshot (with its audit metadata) and returns it. */
+    public JobDefinitionVersionRecord save(String jobName, int version, String description, String stepsJson,
+                                           String author, String changeType, String changeNote) {
         Timestamp now = Timestamp.from(Instant.now());
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbc.update(connection -> {
             PreparedStatement ps = connection.prepareStatement(
                     "INSERT INTO " + TABLE
-                            + " (JOB_NAME, VERSION_NUMBER, DESCRIPTION, STEPS_JSON, CREATED_AT) VALUES (?, ?, ?, ?, ?)",
+                            + " (JOB_NAME, VERSION_NUMBER, DESCRIPTION, STEPS_JSON, AUTHOR, CHANGE_TYPE,"
+                            + " CHANGE_NOTE, CREATED_AT) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, jobName);
             ps.setInt(2, version);
             ps.setString(3, description);
             ps.setString(4, stepsJson);
-            ps.setTimestamp(5, now);
+            ps.setString(5, author);
+            ps.setString(6, changeType);
+            ps.setString(7, changeNote);
+            ps.setTimestamp(8, now);
             return ps;
         }, keyHolder);
         Number key = keyHolder.getKey();
         Long id = key != null ? key.longValue() : null;
-        return new JobDefinitionVersionRecord(id, jobName, version, description, stepsJson, now.toInstant());
+        return new JobDefinitionVersionRecord(id, jobName, version, description, stepsJson,
+                author, changeType, changeNote, now.toInstant());
     }
 
     /** Every snapshot for a job, newest first. */

@@ -101,8 +101,9 @@ public class JobController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public JobSummary createJob(@RequestBody CreateJobRequest request) {
-        String name = dynamicJobService.createJob(request);
+    public JobSummary createJob(@RequestBody CreateJobRequest request,
+                                @RequestParam(required = false) String note) {
+        String name = dynamicJobService.createJob(request, note);
         return jobAdminService.getJob(name);
     }
 
@@ -123,8 +124,9 @@ public class JobController {
 
     /** Replaces an existing dynamic job's steps/description in place (the name is fixed). */
     @PutMapping("/{jobName}")
-    public JobSummary updateJob(@PathVariable String jobName, @RequestBody CreateJobRequest request) {
-        String name = dynamicJobService.updateJob(jobName, request);
+    public JobSummary updateJob(@PathVariable String jobName, @RequestBody CreateJobRequest request,
+                                @RequestParam(required = false) String note) {
+        String name = dynamicJobService.updateJob(jobName, request, note);
         return jobAdminService.getJob(name);
     }
 
