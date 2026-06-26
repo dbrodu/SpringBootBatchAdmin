@@ -15,11 +15,11 @@
 
     <label class="field">
       <span>Job name</span>
-      <input name="jobName" placeholder="e.g. nightlyExport" required/>
+      <input name="jobName" placeholder="e.g. nightlyExport" th:value="${formJobName}" required/>
     </label>
     <label class="field">
       <span>Description (optional)</span>
-      <input name="description" placeholder="optional"/>
+      <input name="description" placeholder="optional" th:value="${formDescription}"/>
     </label>
 
     <label class="field" style="max-width:680px">
@@ -48,12 +48,31 @@
 
     <label class="field" style="max-width:680px">
       <span>Steps — one per line: <code>name = type (key=value, key2=value2)</code></span>
-      <textarea id="steps-input" name="steps" placeholder="extract = log (message=Extracting)&#10;wait = sleep (millis=2000)&#10;done = log (message=Finished)"></textarea>
+      <textarea id="steps-input" name="steps" placeholder="extract = log (message=Extracting)&#10;wait = sleep (millis=2000)&#10;done = log (message=Finished)" th:text="${formSteps}"></textarea>
       <span class="hint">The properties block is optional, e.g. <code>cleanup = sleep</code>.</span>
     </label>
 
-    <button type="submit" class="btn btn-primary">Create job</button>
+    <div class="inline-form">
+      <button type="submit" th:formaction="@{|${basePath}/jobs/preview|}" class="btn">👁 Preview steps</button>
+      <button type="submit" class="btn btn-primary">Create job</button>
+    </div>
   </form>
+
+  <div class="panel" th:if="${preview != null}">
+    <h4>Preview — <span th:text="${preview.stepCount()}">3</span> step(s) will run, in order</h4>
+    <table class="grid">
+      <thead><tr><th>#</th><th>Step</th><th>From</th><th>Type</th></tr></thead>
+      <tbody>
+        <tr th:each="s,it : ${preview.steps()}">
+          <td th:text="${it.index + 1}">1</td>
+          <td><code th:text="${s.stepName()}">myJob.extract</code></td>
+          <td class="muted" th:text="${s.source()}">tasklet</td>
+          <td class="muted"><code th:text="${s.type()}">log</code></td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="muted">Looks right? Click <strong>Create job</strong> above to register it.</p>
+  </div>
 
   <script th:inline="none">
     (function () {

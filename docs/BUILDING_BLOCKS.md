@@ -262,6 +262,21 @@ curl http://localhost:8080/batch-admin/api/jobs/reusable-steps  # single steps o
 curl http://localhost:8080/batch-admin/api/jobs/reusable-jobs   # whole-job flows of existing jobs (§3)
 ```
 
+### Preview before creating
+
+To see exactly what a composition expands to — with `job:<name>` whole-job blocks broken out into
+their individual steps — **preview** it (the *Preview steps* button on the GUI, or the API) before
+committing. It validates the composition but creates nothing:
+
+```bash
+curl -X POST http://localhost:8080/batch-admin/api/jobs/preview -H 'Content-Type: application/json' -d '{
+  "jobName":"nightlyImport",
+  "steps":[ {"name":"cleanup","type":"purge-table","properties":{"table":"TMP"}},
+            {"name":"reload","type":"job:invoiceJob"} ] }'
+# { "stepCount": 4, "steps": [ { "stepName":"nightlyImport.cleanup", "type":"purge-table", ... },
+#   { "stepName":"invoiceJob.extract", "type":"job:invoiceJob", "source":"reused from job 'invoiceJob'" }, … ] }
+```
+
 ---
 
 ## Property handling
