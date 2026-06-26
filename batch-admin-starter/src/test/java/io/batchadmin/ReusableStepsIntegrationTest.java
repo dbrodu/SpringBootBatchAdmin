@@ -62,4 +62,40 @@ class ReusableStepsIntegrationTest {
             assertThat(execution.steps()).isNotEmpty();
         });
     }
+
+    @Test
+    void reusesAWholeExistingJobFlowAsASingleBlock() {
+        // The two-step host job 'twoStepJob' is offered as a single 'job:twoStepJob' block.
+        ResponseEntity<List<Map<String, Object>>> blocks = rest.exchange(api("/jobs/reusable-jobs"),
+                HttpMethod.GET, null, new ParameterizedTypeReference<>() {
+                });
+        assertThat(blocks.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(blocks.getBody()).anyMatch(b -> "job:twoStepJob".equals(b.get("type")));
+
+        CreateJobRequest request = new CreateJobRequest("reuseWholeJob", "reuses an entire host job",
+                List.of(new StepDefinition("flow", "job:twoStepJob", Map.of())));
+        ResponseEntity<JobSummary> created = rest.postForEntity(api("/jobs"), request, JobSummary.class);
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        ResponseEntity<ExecutionSummary> started = rest.postForEntity(api("/jobs/reuseWholeJob/executions"),
+                Map.of("parameters", Map.of()), ExecutionSummary.class);
+        assertThat(started.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        long executionId = started.getBody().executionId();
+
+        Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+            ExecutionSummary execution = rest.getForObject(api("/executions/" + executionId), ExecutionSummary.class);
+            assertThat(execution.status()).isEqualTo("COMPLETED");
+            // Both steps of the reused job ran, in order.
+            assertThat(execution.steps()).hasSize(2);
+        });
+    }
+
+    @Test
+    void createJobPageRendersTheBlockPickerWithReusableBlocks() {
+        ResponseEntity<String> page = rest.getForEntity("/batch-admin/jobs/new", String.class);
+        assertThat(page.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(page.getBody()).contains("block-picker");                // the dropdown
+        assertThat(page.getBody()).contains("job:twoStepJob");              // a whole-job block option
+        assertThat(page.getBody()).contains("sampleTestJob.step");          // a reusable-step option
+    }
 }

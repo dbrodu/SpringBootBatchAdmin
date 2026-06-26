@@ -81,7 +81,8 @@ public class ImportFileTaskletProvider implements TaskletProvider {
 }
 ```
 
-In the GUI's **Create job** screen you describe the steps, one per line:
+In the GUI's **Create job** screen you describe the steps, one per line (a building-block **picker**
+inserts them for you, and **▲ / ▼** controls reorder them):
 
 ```
 extract = import-file (path=/in/data.csv)
@@ -91,10 +92,18 @@ notify  = log (message=done)
 
 Dynamically created jobs are **persisted** and re-registered on every restart.
 
-The steps of your **existing jobs** are also offered as building blocks automatically — the component
-derives a reusable step type from each one (`<jobName>.<stepName>`), so a new job can drop in a step
-the application already defines, with no code. Disable with
+Your **existing jobs** are offered as building blocks automatically — the component derives a reusable
+step type from each step (`<jobName>.<stepName>`) and a whole-flow type from each job
+(`job:<jobName>`, all its steps in order), so a new job can drop in steps the application already
+defines, with no code. The **Create job** screen has a picker to insert them. Disable with
 `batch.admin.dynamic-jobs.reuse-existing-steps=false`.
+
+You can **preview** a composition before creating it (the *Preview steps* button, or
+`POST .../api/jobs/preview`) to see the exact ordered steps it expands to, **clone** any existing job
+into a new dynamic one in a click (the *Clone* button, or `POST .../api/jobs/<name>/clone`), and
+**edit** a dynamic job's steps in place (the *Edit* action, or `PUT .../api/jobs/<name>`). Dynamic jobs
+can also be **exported/imported as JSON** to move them between environments (the *Import / export*
+panel, or `GET/POST .../api/jobs/export` and `…/import`).
 
 > **Adding your own building block?** See the **[Building blocks guide](docs/BUILDING_BLOCKS.md)** — a
 > step-by-step walkthrough of the `TaskletProvider` and `StepProvider` SPIs, deriving blocks from

@@ -6,32 +6,166 @@
 <main class="app-main">
   <div th:replace="~{batch-admin/fragments :: banner}"></div>
 
-  <form class="panel" th:action="@{|${basePath}/jobs|}" method="post">
-    <h3>Create a job on the fly</h3>
+  <form class="panel" method="post"
+        th:action="${editJobName != null} ? @{|${basePath}/jobs/${editJobName}/edit|} : @{|${basePath}/jobs|}">
+    <h3 th:text="${editJobName != null} ? 'Edit job' : 'Create a job on the fly'">Create a job on the fly</h3>
     <p class="muted">
-      Compose a job from the building blocks (tasklet providers) exposed by the application.
-      It is registered immediately and becomes launchable and schedulable.
+      Compose a job from the building blocks the application exposes. It is registered immediately and
+      becomes launchable and schedulable.
     </p>
+
+    <input type="hidden" name="editJobName" th:if="${editJobName != null}" th:value="${editJobName}"/>
 
     <label class="field">
       <span>Job name</span>
-      <input name="jobName" placeholder="e.g. nightlyExport" required/>
+      <input name="jobName" placeholder="e.g. nightlyExport" th:value="${formJobName}" required
+             th:readonly="${editJobName != null}"/>
     </label>
     <label class="field">
       <span>Description (optional)</span>
-      <input name="description" placeholder="optional"/>
+      <input name="description" placeholder="optional" th:value="${formDescription}"/>
+    </label>
+
+    <label class="field" style="max-width:680px">
+      <span>Quick add a building block</span>
+      <select id="block-picker">
+        <option value="">Pick a building block to append…</option>
+        <optgroup label="Tasklet steps" th:if="${not providers.isEmpty()}">
+          <option th:each="p : ${providers}" th:value="${p.type()}"
+                  th:text="${p.displayName() + ' (' + p.type() + ')'}">log</option>
+        </optgroup>
+        <optgroup label="Chunk steps" th:if="${not stepProviders.isEmpty()}">
+          <option th:each="p : ${stepProviders}" th:value="${p.type()}"
+                  th:text="${p.displayName() + ' (' + p.type() + ')'}">sql-export</option>
+        </optgroup>
+        <optgroup label="Reuse a step from an existing job" th:if="${not reusableSteps.isEmpty()}">
+          <option th:each="p : ${reusableSteps}" th:value="${p.type()}"
+                  th:text="${p.displayName() + ' (' + p.type() + ')'}">invoiceJob.extract</option>
+        </optgroup>
+        <optgroup label="Reuse a whole existing job" th:if="${not reusableJobs.isEmpty()}">
+          <option th:each="p : ${reusableJobs}" th:value="${p.type()}"
+                  th:text="${p.displayName() + ' (' + p.type() + ')'}">job:invoiceJob</option>
+        </optgroup>
+      </select>
+      <span class="hint">Appends a line to the steps below — edit the name as you like.</span>
     </label>
 
     <label class="field" style="max-width:680px">
       <span>Steps — one per line: <code>name = type (key=value, key2=value2)</code></span>
-      <textarea name="steps" placeholder="extract = log (message=Extracting)&#10;wait = sleep (millis=2000)&#10;done = log (message=Finished)"></textarea>
+      <textarea id="steps-input" name="steps" placeholder="extract = log (message=Extracting)&#10;wait = sleep (millis=2000)&#10;done = log (message=Finished)" th:text="${formSteps}"></textarea>
       <span class="hint">The properties block is optional, e.g. <code>cleanup = sleep</code>.</span>
     </label>
 
-    <button type="submit" class="btn btn-primary">Create job</button>
+    <div class="field" style="max-width:680px">
+      <span>Step order</span>
+      <div id="step-order" style="display:flex; flex-direction:column; gap:4px"></div>
+      <span class="hint">Use ▲ / ▼ to reorder steps without editing the text above.</span>
+    </div>
+
+    <div class="inline-form">
+      <button type="submit" th:formaction="@{|${basePath}/jobs/preview|}" class="btn">👁 Preview steps</button>
+      <button type="submit" class="btn btn-primary"
+              th:text="${editJobName != null} ? 'Save changes' : 'Create job'">Create job</button>
+      <a th:if="${editJobName != null}" th:href="@{|${basePath}/jobs|}" class="btn">Cancel</a>
+    </div>
   </form>
 
-  <form class="panel" th:action="@{|${basePath}/jobs/sql-export|}" method="post">
+  <div class="panel" th:if="${preview != null}">
+    <h4>Preview — <span th:text="${preview.stepCount()}">3</span> step(s) will run, in order</h4>
+    <table class="grid">
+      <thead><tr><th>#</th><th>Step</th><th>From</th><th>Type</th></tr></thead>
+      <tbody>
+        <tr th:each="s,it : ${preview.steps()}">
+          <td th:text="${it.index + 1}">1</td>
+          <td><code th:text="${s.stepName()}">myJob.extract</code></td>
+          <td class="muted" th:text="${s.source()}">tasklet</td>
+          <td class="muted"><code th:text="${s.type()}">log</code></td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="muted">Looks right? Click <strong>Create job</strong> above to register it.</p>
+  </div>
+
+  <script th:inline="none">
+    (function () {
+      var steps = document.getElementById('steps-input');
+      if (!steps) { return; }
+      var order = document.getElementById('step-order');
+
+      function getLines() {
+        return steps.value.split('\n').filter(function (l) { return l.trim() !== ''; });
+      }
+      function setLines(lines) {
+        steps.value = lines.length ? lines.join('\n') + '\n' : '';
+      }
+      function move(from, to) {
+        var lines = getLines();
+        if (to === -1 || to === lines.length) { return; }
+        var moved = lines.splice(from, 1)[0];
+        lines.splice(to, 0, moved);
+        setLines(lines);
+        renderOrder();
+      }
+      function renderOrder() {
+        if (!order) { return; }
+        order.textContent = '';
+        var lines = getLines();
+        if (lines.length === 0) {
+          var empty = document.createElement('span');
+          empty.className = 'muted';
+          empty.textContent = 'No steps yet.';
+          order.appendChild(empty);
+          return;
+        }
+        lines.forEach(function (line, i) {
+          var row = document.createElement('div');
+          row.style.display = 'flex';
+          row.style.gap = '6px';
+          row.style.alignItems = 'center';
+          var up = document.createElement('button');
+          up.type = 'button'; up.className = 'btn btn-small'; up.textContent = '▲';
+          up.disabled = (i === 0);
+          up.addEventListener('click', function () { move(i, i - 1); });
+          var down = document.createElement('button');
+          down.type = 'button'; down.className = 'btn btn-small'; down.textContent = '▼';
+          down.disabled = (i === lines.length - 1);
+          down.addEventListener('click', function () { move(i, i + 1); });
+          var label = document.createElement('code');
+          label.textContent = line.trim();
+          row.appendChild(up);
+          row.appendChild(down);
+          row.appendChild(label);
+          order.appendChild(row);
+        });
+      }
+      steps.addEventListener('input', renderOrder);
+      renderOrder();
+
+      var picker = document.getElementById('block-picker');
+      if (picker) {
+        picker.addEventListener('change', function () {
+          var type = picker.value;
+          if (!type) { return; }
+          var base = type.replace(/^job:/, '').split(/[.:]/).pop().replace(/[^A-Za-z0-9]/g, '');
+          if (!base) { base = 'step'; }
+          var name = base;
+          var n = 2;
+          while (new RegExp('(^|\\n)\\s*' + name + '\\s*=', 'i').test(steps.value)) {
+            name = base + n;
+            n = n + 1;
+          }
+          var current = steps.value.replace(/\s+$/, '');
+          var line = name + ' = ' + type;
+          steps.value = (current ? current + '\n' : '') + line + '\n';
+          steps.focus();
+          picker.selectedIndex = 0;
+          renderOrder();
+        });
+      }
+    })();
+  </script>
+
+  <form class="panel" th:action="@{|${basePath}/jobs/sql-export|}" method="post" th:if="${editJobName == null}">
     <h3>Create a SQL → target export</h3>
     <p class="muted">
       Compose a one-step export job: a paged SQL query is streamed, each row is turned into JSON and
@@ -100,14 +234,20 @@
           <td th:text="${p.displayName()}">Reuse step 'extract' from job 'invoiceJob'</td>
           <td class="muted">— reuses the existing step as-is (no properties)</td>
         </tr>
-        <tr th:if="${providers.isEmpty() and stepProviders.isEmpty() and reusableSteps.isEmpty()}">
+        <tr th:each="p : ${reusableJobs}">
+          <td><code th:text="${p.type()}">job:invoiceJob</code></td>
+          <td th:text="${p.displayName()}">Reuse job 'invoiceJob' (3 steps, in order)</td>
+          <td class="muted">— inserts every step of the job, in order (no properties)</td>
+        </tr>
+        <tr th:if="${providers.isEmpty() and stepProviders.isEmpty() and reusableSteps.isEmpty() and reusableJobs.isEmpty()}">
           <td colspan="3" class="muted">No building blocks available.</td>
         </tr>
       </tbody>
     </table>
-    <p class="muted" th:if="${not reusableSteps.isEmpty()}" style="margin-top:.5rem">
-      Types listed as <code>job.step</code> / <code>step</code> reuse a step from one of your existing
-      jobs — drop them into a job above just like any other building block.
+    <p class="muted" th:if="${not reusableSteps.isEmpty() or not reusableJobs.isEmpty()}" style="margin-top:.5rem">
+      <code>job.step</code> / <code>step</code> reuse a single step of an existing job;
+      <code>job:&lt;name&gt;</code> reuses a whole job's flow (all its steps, in order). Use the picker
+      above to drop them in.
     </p>
   </div>
 </main>

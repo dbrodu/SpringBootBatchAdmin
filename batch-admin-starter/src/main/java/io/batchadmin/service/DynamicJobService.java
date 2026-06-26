@@ -11,10 +11,15 @@ import io.batchadmin.dynamic.StepProvider;
 import io.batchadmin.dynamic.TaskletProvider;
 import io.batchadmin.metadata.ValueResolver;
 import io.batchadmin.web.dto.CreateJobRequest;
+import io.batchadmin.web.dto.ImportResult;
+import io.batchadmin.web.dto.JobPreview;
+import io.batchadmin.web.dto.JobStepPreview;
 import io.batchadmin.web.dto.ProviderInfo;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -116,6 +121,22 @@ public class DynamicJobService {
                 .toList();
     }
 
+    /**
+     * Building blocks that reuse a whole existing job's flow (all of its steps, in order) as a single
+     * block. Empty when {@code batch.admin.dynamic-jobs.reuse-existing-steps=false}.
+     */
+    public List<ProviderInfo> listReusableJobs() {
+        if (!properties.getDynamicJobs().isReuseExistingSteps()) {
+            return List.of();
+        }
+        return existingStepCatalog.reusableJobs().stream()
+                .map(j -> new ProviderInfo(j.type(),
+                        "Reuse job '" + j.jobName() + "' (" + j.steps().size() + " step"
+                                + (j.steps().size() == 1 ? "" : "s") + ", in order)",
+                        Map.of()))
+                .toList();
+    }
+
     public String createJob(CreateJobRequest request) {
         if (!properties.getDynamicJobs().isEnabled()) {
             throw BatchAdminException.badRequest("Dynamic job creation is disabled");
@@ -140,6 +161,109 @@ public class DynamicJobService {
         return name;
     }
 
+    /**
+     * Dry-run a composition: validates it and returns the ordered, fully expanded list of steps the
+     * job <i>would</i> run — {@code job:<name>} whole-job blocks expanded into their constituent
+     * steps — without building, registering or persisting anything.
+     */
+    public JobPreview previewJob(CreateJobRequest request) {
+        if (request.steps().isEmpty()) {
+            throw BatchAdminException.badRequest("A job needs at least one step");
+        }
+        validateSteps(request.steps());
+        String jobName = request.jobName() == null ? "" : request.jobName().trim();
+        String prefix = jobName.isBlank() ? "" : jobName + ".";
+
+        List<JobStepPreview> resolved = new ArrayList<>();
+        for (StepDefinition definition : request.steps()) {
+            String type = definition.type() == null ? "" : definition.type().toLowerCase();
+            if (reuseExistingSteps() && existingStepCatalog.containsJob(type)) {
+                String source = definition.type().substring(ExistingStepCatalog.JOB_TYPE_PREFIX.length());
+                for (Step step : existingStepCatalog.findJobSteps(type)) {
+                    resolved.add(new JobStepPreview(step.getName(), definition.type(),
+                            "reused from job '" + source + "'"));
+                }
+            } else if (reuseExistingSteps() && existingStepCatalog.contains(type)) {
+                Step step = existingStepCatalog.find(type);
+                resolved.add(new JobStepPreview(step.getName(), definition.type(), "reused existing step"));
+            } else if (stepProviders.containsKey(type)) {
+                resolved.add(new JobStepPreview(prefix + definition.name(), definition.type(), "step provider"));
+            } else {
+                resolved.add(new JobStepPreview(prefix + definition.name(), definition.type(), "tasklet"));
+            }
+        }
+        return new JobPreview(jobName, resolved.size(), resolved);
+    }
+
+    /**
+     * Creates a new dynamic job that replicates an existing one. A dynamic source is copied
+     * definition-for-definition (an exact clone); a declared host job is cloned by reusing its whole
+     * flow ({@code job:<name>}), since its original definitions are not known to the component.
+     *
+     * @param sourceName     the job to clone (declared or dynamic)
+     * @param requestedName  name for the clone; when blank, {@code <source>-copy} is used
+     * @return the name of the created clone
+     */
+    public String cloneJob(String sourceName, String requestedName) {
+        if (!jobRegistry.getJobNames().contains(sourceName)) {
+            throw BatchAdminException.notFound("No job named '" + sourceName + "'");
+        }
+        String newName = (requestedName == null || requestedName.isBlank())
+                ? sourceName + "-copy" : requestedName.trim();
+
+        List<StepDefinition> steps;
+        Optional<JobDefinitionRecord> definition = definitionDao.findByJobName(sourceName);
+        if (definition.isPresent()) {
+            steps = readSteps(definition.get().stepsJson());
+        } else {
+            if (!reuseExistingSteps()) {
+                throw BatchAdminException.badRequest("Cloning the declared job '" + sourceName
+                        + "' requires reuse of existing steps to be enabled");
+            }
+            if (!existingStepCatalog.containsJob(ExistingStepCatalog.JOB_TYPE_PREFIX + sourceName)) {
+                throw BatchAdminException.badRequest("Job '" + sourceName
+                        + "' does not expose its steps and cannot be cloned");
+            }
+            steps = List.of(new StepDefinition(sourceName,
+                    ExistingStepCatalog.JOB_TYPE_PREFIX + sourceName, Map.of()));
+        }
+        return createJob(new CreateJobRequest(newName, "Clone of '" + sourceName + "'", steps));
+    }
+
+    /** The stored definition (name, description, steps) of a dynamic job, for editing/inspection. */
+    public CreateJobRequest getDefinition(String jobName) {
+        JobDefinitionRecord record = definitionDao.findByJobName(jobName).orElseThrow(() ->
+                BatchAdminException.notFound("No dynamic job named '" + jobName + "'"));
+        return new CreateJobRequest(record.jobName(), record.description(), readSteps(record.stepsJson()));
+    }
+
+    /**
+     * Replaces the steps/description of an existing <b>dynamic</b> job in place (the name is fixed).
+     * The new composition is built and validated <i>before</i> the old job is swapped out, so a bad
+     * edit leaves the current job untouched.
+     */
+    public String updateJob(String jobName, CreateJobRequest request) {
+        if (!properties.getDynamicJobs().isEnabled()) {
+            throw BatchAdminException.badRequest("Dynamic job creation is disabled");
+        }
+        if (definitionDao.findByJobName(jobName).isEmpty()) {
+            throw BatchAdminException.notFound(
+                    "No dynamic job named '" + jobName + "' (only dynamic jobs can be edited)");
+        }
+        if (request.steps().isEmpty()) {
+            throw BatchAdminException.badRequest("A job needs at least one step");
+        }
+        validateSteps(request.steps());
+
+        Job rebuilt = buildJob(jobName, request.steps());   // build first: bad edits never drop the job
+        jobRegistry.unregister(jobName);
+        registerJob(rebuilt);
+        definitionDao.update(jobName, request.description(), writeSteps(request.steps()));
+
+        log.info("[batch-admin] Updated dynamic job '{}' with {} step(s)", jobName, request.steps().size());
+        return jobName;
+    }
+
     public void deleteJob(String jobName) {
         if (definitionDao.findByJobName(jobName).isEmpty()) {
             throw BatchAdminException.notFound(
@@ -148,6 +272,95 @@ public class DynamicJobService {
         jobRegistry.unregister(jobName);
         definitionDao.deleteByJobName(jobName);
         log.info("[batch-admin] Deleted dynamic job '{}'", jobName);
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Export / import (portable JSON definitions, to move jobs between environments)
+    // ----------------------------------------------------------------------------------------
+
+    /** Every dynamic job's portable definition (name, description, steps), in id order. */
+    public List<CreateJobRequest> exportAll() {
+        return definitionDao.findAll().stream()
+                .map(record -> new CreateJobRequest(record.jobName(), record.description(),
+                        readSteps(record.stepsJson())))
+                .toList();
+    }
+
+    /** One dynamic job's portable definition. */
+    public CreateJobRequest exportJob(String jobName) {
+        JobDefinitionRecord record = definitionDao.findByJobName(jobName).orElseThrow(() ->
+                BatchAdminException.notFound("No dynamic job named '" + jobName + "'"));
+        return new CreateJobRequest(record.jobName(), record.description(), readSteps(record.stepsJson()));
+    }
+
+    /** All dynamic jobs serialized as a pretty-printed JSON array (for download). */
+    public String exportAllJson() {
+        try {
+            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(exportAll());
+        } catch (Exception ex) {
+            throw new BatchAdminException(BatchAdminException.Kind.INTERNAL, "Cannot serialize jobs", ex);
+        }
+    }
+
+    /**
+     * Imports job definitions previously exported (e.g. from another environment). Each definition is
+     * created; one whose name already exists as a dynamic job is overwritten when {@code overwrite} is
+     * set, otherwise skipped. A name colliding with a declared host job, or any definition that fails
+     * to build, is reported as failed; the rest still import.
+     */
+    public ImportResult importJobs(List<CreateJobRequest> definitions, boolean overwrite) {
+        if (!properties.getDynamicJobs().isEnabled()) {
+            throw BatchAdminException.badRequest("Dynamic job creation is disabled");
+        }
+        List<String> created = new ArrayList<>();
+        List<String> updated = new ArrayList<>();
+        List<String> skipped = new ArrayList<>();
+        Map<String, String> failed = new LinkedHashMap<>();
+        for (CreateJobRequest definition : definitions) {
+            String name = definition.jobName() == null ? "" : definition.jobName().trim();
+            try {
+                if (name.isBlank()) {
+                    throw BatchAdminException.badRequest("'jobName' is required");
+                }
+                boolean existsDynamic = definitionDao.findByJobName(name).isPresent();
+                if (existsDynamic) {
+                    if (overwrite) {
+                        // Validate the replacement builds before removing the existing job.
+                        validateSteps(definition.steps());
+                        buildJob(name, definition.steps());
+                        deleteJob(name);
+                        createJob(definition);
+                        updated.add(name);
+                    } else {
+                        skipped.add(name);
+                    }
+                } else if (jobRegistry.getJobNames().contains(name)) {
+                    failed.put(name, "a declared (non-dynamic) job with this name already exists");
+                } else {
+                    created.add(createJob(definition));
+                }
+            } catch (RuntimeException ex) {
+                failed.put(name.isBlank() ? "(unnamed)" : name, ex.getMessage());
+            }
+        }
+        log.info("[batch-admin] Imported job definitions: {} created, {} updated, {} skipped, {} failed",
+                created.size(), updated.size(), skipped.size(), failed.size());
+        return new ImportResult(created, updated, skipped, failed);
+    }
+
+    /** Parses an exported JSON array and {@link #importJobs(List, boolean) imports} it. */
+    public ImportResult importJobsFromJson(String json, boolean overwrite) {
+        if (json == null || json.isBlank()) {
+            throw BatchAdminException.badRequest("No JSON to import");
+        }
+        List<CreateJobRequest> definitions;
+        try {
+            definitions = objectMapper.readValue(json, new TypeReference<List<CreateJobRequest>>() {
+            });
+        } catch (Exception ex) {
+            throw BatchAdminException.badRequest("Invalid job-definitions JSON: " + ex.getMessage());
+        }
+        return importJobs(definitions, overwrite);
     }
 
     /** Re-registers every persisted dynamic job. Invoked once the application is ready. */
@@ -182,12 +395,14 @@ public class DynamicJobService {
             }
             String type = step.type() == null ? "" : step.type().toLowerCase();
             boolean known = providers.containsKey(type) || stepProviders.containsKey(type)
-                    || (reuseExistingSteps() && existingStepCatalog.contains(type));
+                    || (reuseExistingSteps()
+                        && (existingStepCatalog.contains(type) || existingStepCatalog.containsJob(type)));
             if (!known) {
                 Set<String> available = new java.util.TreeSet<>(providers.keySet());
                 available.addAll(stepProviders.keySet());
                 if (reuseExistingSteps()) {
                     existingStepCatalog.reusableSteps().forEach(s -> available.add(s.type()));
+                    existingStepCatalog.reusableJobs().forEach(j -> available.add(j.type()));
                 }
                 throw BatchAdminException.badRequest("Unknown step type '" + step.type()
                         + "'. Available types: " + available);
@@ -204,10 +419,33 @@ public class DynamicJobService {
         }
         SimpleJobBuilder simpleBuilder = null;
         for (StepDefinition definition : steps) {
-            Step step = buildStep(name, definition);
-            simpleBuilder = (simpleBuilder == null) ? jobBuilder.start(step) : simpleBuilder.next(step);
+            for (Step step : buildSteps(name, definition)) {
+                simpleBuilder = (simpleBuilder == null) ? jobBuilder.start(step) : simpleBuilder.next(step);
+            }
+        }
+        if (simpleBuilder == null) {
+            throw BatchAdminException.badRequest("A job needs at least one step");
         }
         return simpleBuilder.build();
+    }
+
+    /**
+     * Materializes one step definition into the step(s) it contributes: a single step for ordinary
+     * blocks, or — when the type is a {@code job:<name>} whole-job block — that job's entire ordered
+     * flow reused as-is.
+     */
+    private List<Step> buildSteps(String jobName, StepDefinition definition) {
+        String type = definition.type() == null ? "" : definition.type().toLowerCase();
+        if (reuseExistingSteps()) {
+            List<Step> flow = existingStepCatalog.findJobSteps(type);
+            if (flow != null) {
+                if (flow.isEmpty()) {
+                    throw BatchAdminException.badRequest("Reused job '" + definition.type() + "' has no steps");
+                }
+                return flow;
+            }
+        }
+        return List.of(buildStep(jobName, definition));
     }
 
     private Step buildStep(String jobName, StepDefinition definition) {

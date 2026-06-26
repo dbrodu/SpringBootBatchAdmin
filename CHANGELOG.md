@@ -10,12 +10,41 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 **Building blocks derived from existing jobs**
-- `ExistingStepCatalog` — automatically exposes every step of the host's already-registered jobs as a
-  reusable building block (step type `<stepName>`, or `<jobName>.<stepName>` when names collide), so a
-  new on-the-fly job can drop in a step the application already defines, with no code. Reuse shares the
-  existing step instance; dynamic (component-created) jobs are excluded. Listed at
-  `GET <base-path>/api/jobs/reusable-steps` and on the **Create job** screen. Toggle with
+- `ExistingStepCatalog` — automatically exposes the host's already-registered jobs as reusable
+  building blocks, at two granularities: each **step** (type `<stepName>`, or `<jobName>.<stepName>`
+  when names collide) and each **whole job's flow** (type `job:<jobName>` — all its steps, in order),
+  so a new on-the-fly job can drop in steps the application already defines, with no code. Reuse shares
+  the existing step instances; dynamic (component-created) jobs are excluded. Listed at
+  `GET <base-path>/api/jobs/reusable-steps` and `…/reusable-jobs`. Toggle with
   `batch.admin.dynamic-jobs.reuse-existing-steps` (default `true`).
+- The **Create job** GUI gains a **building-block picker** (dropdown of every composable block —
+  providers, reusable steps and whole-job blocks) that appends a ready-made step line, so operators
+  pick blocks instead of typing their types.
+- The **Create job** GUI gains a **step-order** widget — ▲ / ▼ controls to reorder steps without
+  hand-editing the text area (kept in sync with it, progressive-enhancement vanilla JS).
+
+**GUI**
+- The **Jobs** screen gains a **Schedule** column showing each job's next run (or *paused* + cron when
+  disabled), linking to the Schedules screen — so the schedule is visible at a glance without leaving
+  the page.
+
+**Previewing and cloning jobs**
+- **Preview a composition** before creating it — `POST <base-path>/api/jobs/preview` (and a *Preview
+  steps* button on the **Create job** screen) returns the ordered, fully expanded list of steps the
+  job would run (with `job:<name>` whole-job blocks expanded into their constituent steps), validating
+  it without building, registering or persisting anything.
+- **Clone an existing job** in one action — `POST <base-path>/api/jobs/<name>/clone` and a *Clone*
+  button on the **Jobs** screen. A dynamic job is copied definition-for-definition; a declared host job
+  is cloned by reusing its whole flow.
+- **Edit a dynamic job** in place — `PUT <base-path>/api/jobs/<name>` and an *Edit* action on the
+  **Jobs** screen that reopens the composer pre-filled with the job's steps. The new composition is
+  built and validated before the old job is swapped out, so a bad edit never drops the running
+  definition. (Declared host jobs cannot be edited.)
+- **Export / import job definitions as JSON** to move dynamic jobs between environments —
+  `GET <base-path>/api/jobs/export` (all) / `…/<name>/export` (one), and
+  `POST <base-path>/api/jobs/import?overwrite=` (existing jobs are skipped, or overwritten when
+  `overwrite=true`; names colliding with a declared job are reported as failed). The **Jobs** screen
+  gains an *Import / export* panel (download + paste-to-import).
 
 **Reusable SQL → JSON → target building blocks**
 - `GenericSqlItemReader` / `GenericSqlItemReaderBuilder` — a configurable `ItemReader` that streams the

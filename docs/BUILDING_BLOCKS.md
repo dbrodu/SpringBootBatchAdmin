@@ -195,6 +195,32 @@ Turn this off with `batch.admin.dynamic-jobs.reuse-existing-steps=false`.
 > `StepLocator`) contribute blocks. A step may legitimately belong to several jobs — reuse shares the
 > one instance; execution state is still tracked per job execution.
 
+### Reuse a whole job's flow
+
+You can also reuse an **entire** existing job as a single block — all of its steps, in their original
+order — referenced as **`job:<jobName>`**:
+
+```bash
+curl http://localhost:8080/batch-admin/api/jobs/reusable-jobs
+# [ { "type": "job:invoiceJob", "displayName": "Reuse job 'invoiceJob' (3 steps, in order)", ... } ]
+```
+
+```
+# one line inserts the job's whole flow:
+invoices = job:invoiceJob
+notify   = log (message=done)
+```
+
+The line's name is just a label (the inserted steps keep their own names). The same
+`reuse-existing-steps` toggle governs it.
+
+### Pick from a dropdown (GUI)
+
+On the **Create job** screen, a **building-block picker** lists everything you can compose — your
+`TaskletProvider`/`StepProvider` types, reusable steps, and whole-job blocks. Choosing one **appends a
+ready-made line** (`name = type`) to the steps box, so operators don't have to remember or type the
+type — they just edit the name and any properties.
+
 ---
 
 ## 4. Use your building block
@@ -232,7 +258,23 @@ like any other.
 
 ```bash
 curl http://localhost:8080/batch-admin/api/jobs/providers       # tasklet building blocks
-curl http://localhost:8080/batch-admin/api/jobs/reusable-steps  # blocks derived from existing jobs (§3)
+curl http://localhost:8080/batch-admin/api/jobs/reusable-steps  # single steps of existing jobs (§3)
+curl http://localhost:8080/batch-admin/api/jobs/reusable-jobs   # whole-job flows of existing jobs (§3)
+```
+
+### Preview before creating
+
+To see exactly what a composition expands to — with `job:<name>` whole-job blocks broken out into
+their individual steps — **preview** it (the *Preview steps* button on the GUI, or the API) before
+committing. It validates the composition but creates nothing:
+
+```bash
+curl -X POST http://localhost:8080/batch-admin/api/jobs/preview -H 'Content-Type: application/json' -d '{
+  "jobName":"nightlyImport",
+  "steps":[ {"name":"cleanup","type":"purge-table","properties":{"table":"TMP"}},
+            {"name":"reload","type":"job:invoiceJob"} ] }'
+# { "stepCount": 4, "steps": [ { "stepName":"nightlyImport.cleanup", "type":"purge-table", ... },
+#   { "stepName":"invoiceJob.extract", "type":"job:invoiceJob", "source":"reused from job 'invoiceJob'" }, … ] }
 ```
 
 ---

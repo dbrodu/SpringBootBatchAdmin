@@ -134,6 +134,19 @@ class BatchAdminIntegrationTest {
     }
 
     @Test
+    void jobsScreenShowsAScheduleColumnWithTheNextRun() {
+        ScheduleRequest request = new ScheduleRequest("sampleTestJob", "0 0 4 * * *", "daily4am", true, Map.of());
+        long id = rest.postForEntity(api("/schedules"), request, ScheduleInfo.class).getBody().id();
+        try {
+            String page = rest.getForObject("/batch-admin/jobs", String.class);
+            assertThat(page).contains("Schedule");          // the new column header
+            assertThat(page).contains("0 0 4 * * *");        // sampleTestJob's schedule cron, shown inline
+        } finally {
+            rest.delete(api("/schedules/" + id));
+        }
+    }
+
+    @Test
     void composesAndRunsASqlExportJob() {
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
         jdbc.execute("CREATE TABLE IF NOT EXISTS EXPORT_SRC (ID INT PRIMARY KEY, NAME VARCHAR(50))");

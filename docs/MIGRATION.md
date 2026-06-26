@@ -343,9 +343,10 @@ plus generic `GenericSqlItemReader` / `JsonItemProcessor` / `GenericJsonItemWrit
 reuse in your own steps. Building these from the GUI lets operators run arbitrary `SELECT`s and push
 to a configured URL — another reason to protect `/batch-admin/**` (§6).
 
-And you may not need to write anything at all: the **steps of your existing jobs** are derived into
-reusable blocks automatically (type `<jobName>.<stepName>`), so a new on-the-fly job can reuse a step
-you already have — see the building-blocks guide. Disable with
+And you may not need to write anything at all: your **existing jobs** are derived into reusable blocks
+automatically — each step (`<jobName>.<stepName>`) and each whole job's flow (`job:<jobName>`, all its
+steps in order). A new on-the-fly job can reuse them with no code, and the **Create job** screen has a
+picker to insert them — see the building-blocks guide. Disable with
 `batch.admin.dynamic-jobs.reuse-existing-steps=false`.
 
 > See the **[Building blocks guide](BUILDING_BLOCKS.md)** for a step-by-step walkthrough of both SPIs

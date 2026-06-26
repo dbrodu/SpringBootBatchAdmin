@@ -2,8 +2,11 @@ package io.batchadmin.web;
 
 import io.batchadmin.service.DynamicJobService;
 import io.batchadmin.service.JobAdminService;
+import io.batchadmin.web.dto.CloneJobRequest;
 import io.batchadmin.web.dto.CreateJobRequest;
 import io.batchadmin.web.dto.ExecutionSummary;
+import io.batchadmin.web.dto.ImportResult;
+import io.batchadmin.web.dto.JobPreview;
 import io.batchadmin.web.dto.JobSummary;
 import io.batchadmin.web.dto.ProviderInfo;
 import io.batchadmin.web.dto.StartJobRequest;
@@ -14,6 +17,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -52,15 +56,62 @@ public class JobController {
         return dynamicJobService.listReusableSteps();
     }
 
+    /** Building blocks that reuse a whole existing job's flow (all its steps), typed {@code job:<name>}. */
+    @GetMapping("/reusable-jobs")
+    public List<ProviderInfo> listReusableJobs() {
+        return dynamicJobService.listReusableJobs();
+    }
+
+    /** Portable JSON of every dynamic job's definition (to move jobs between environments). */
+    @GetMapping("/export")
+    public List<CreateJobRequest> exportJobs() {
+        return dynamicJobService.exportAll();
+    }
+
+    /** Creates/overwrites dynamic jobs from a previously exported JSON array. */
+    @PostMapping("/import")
+    public ImportResult importJobs(@RequestBody List<CreateJobRequest> definitions,
+                                   @RequestParam(defaultValue = "false") boolean overwrite) {
+        return dynamicJobService.importJobs(definitions, overwrite);
+    }
+
     @GetMapping("/{jobName}")
     public JobSummary getJob(@PathVariable String jobName) {
         return jobAdminService.getJob(jobName);
+    }
+
+    /** Portable JSON of one dynamic job's definition. */
+    @GetMapping("/{jobName}/export")
+    public CreateJobRequest exportJob(@PathVariable String jobName) {
+        return dynamicJobService.exportJob(jobName);
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public JobSummary createJob(@RequestBody CreateJobRequest request) {
         String name = dynamicJobService.createJob(request);
+        return jobAdminService.getJob(name);
+    }
+
+    /** Dry-run a composition: returns the expanded step list without creating anything. */
+    @PostMapping("/preview")
+    public JobPreview previewJob(@RequestBody CreateJobRequest request) {
+        return dynamicJobService.previewJob(request);
+    }
+
+    /** Clones an existing job (declared or dynamic) into a new dynamic job. */
+    @PostMapping("/{jobName}/clone")
+    @ResponseStatus(HttpStatus.CREATED)
+    public JobSummary cloneJob(@PathVariable String jobName,
+                               @RequestBody(required = false) CloneJobRequest request) {
+        String created = dynamicJobService.cloneJob(jobName, request == null ? null : request.newName());
+        return jobAdminService.getJob(created);
+    }
+
+    /** Replaces an existing dynamic job's steps/description in place (the name is fixed). */
+    @PutMapping("/{jobName}")
+    public JobSummary updateJob(@PathVariable String jobName, @RequestBody CreateJobRequest request) {
+        String name = dynamicJobService.updateJob(jobName, request);
         return jobAdminService.getJob(name);
     }
 

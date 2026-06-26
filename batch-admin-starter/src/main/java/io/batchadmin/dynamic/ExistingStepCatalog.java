@@ -13,20 +13,25 @@ import org.springframework.batch.core.configuration.JobRegistry;
 import org.springframework.batch.core.step.StepLocator;
 
 /**
- * Derives reusable building blocks from the steps of the host application's <b>already-existing</b>
- * jobs. Every step of every registered job that exposes its steps (i.e. implements
- * {@link StepLocator} — the common {@code SimpleJob}/{@code FlowJob} case) becomes a step <i>type</i>
- * operators can drop into a new job composed on the fly, reusing the exact step the host already
- * defined — no code, no duplication.
+ * Derives reusable building blocks from the host application's <b>already-existing</b> jobs, in two
+ * granularities:
+ * <ul>
+ *   <li><b>a single step</b> — every step of every registered job becomes a step type
+ *       ({@code <stepName>}, or {@code <jobName>.<stepName>} when a name occurs in more than one job);
+ *   </li>
+ *   <li><b>a whole job's flow</b> — the entire ordered list of a job's steps, referenced as
+ *       {@code job:<jobName>}, dropped into a new job as a single block.</li>
+ * </ul>
  *
- * <p>The catalog is recomputed on demand so it always reflects the currently registered jobs. Jobs
- * created <i>through</i> the admin component (dynamic jobs) are excluded, so the component only
- * surfaces the host's genuine building blocks and never feeds its own generated steps back in.</p>
- *
- * <p>The block <b>type</b> is the step's name when that name is unique across the eligible jobs;
- * otherwise it is qualified as {@code <jobName>.<stepName>} so it stays unambiguous.</p>
+ * <p>Both reuse the host's actual {@link Step} instances. Only jobs that expose their steps (i.e.
+ * implement {@link StepLocator} — the common {@code SimpleJob}/{@code FlowJob} case) contribute, and
+ * jobs created <i>through</i> the admin component (dynamic jobs) are excluded so the component never
+ * feeds its own generated steps back in. The catalog is recomputed on demand so it stays live.</p>
  */
 public class ExistingStepCatalog {
+
+    /** Prefix marking a "reuse the whole job's flow" block type. */
+    public static final String JOB_TYPE_PREFIX = "job:";
 
     private final JobRegistry jobRegistry;
     private final Supplier<Set<String>> excludedJobNames;
@@ -41,13 +46,19 @@ public class ExistingStepCatalog {
         this.excludedJobNames = excludedJobNames;
     }
 
-    /** A step of an existing job, exposed as a reusable building block. */
+    /** A single step of an existing job, exposed as a reusable building block. */
     public record ReusableStep(String type, String jobName, Step step) {
     }
 
+    /** A whole job's ordered steps, exposed as a single reusable building block. */
+    public record ReusableJob(String type, String jobName, List<Step> steps) {
+    }
+
+    // ---- single steps -----------------------------------------------------------------------
+
     /** Whether {@code type} resolves to a reusable existing step (case-insensitive). */
     public boolean contains(String type) {
-        return type != null && catalog().containsKey(type.toLowerCase());
+        return type != null && scan().steps.containsKey(type.toLowerCase());
     }
 
     /** The step for {@code type}, or {@code null} if none (case-insensitive). */
@@ -55,18 +66,45 @@ public class ExistingStepCatalog {
         if (type == null) {
             return null;
         }
-        ReusableStep reusable = catalog().get(type.toLowerCase());
+        ReusableStep reusable = scan().steps.get(type.toLowerCase());
         return reusable == null ? null : reusable.step();
     }
 
-    /** All reusable steps currently derived from existing jobs, in discovery order. */
+    /** All reusable single steps currently derived from existing jobs, in discovery order. */
     public List<ReusableStep> reusableSteps() {
-        return List.copyOf(catalog().values());
+        return List.copyOf(scan().steps.values());
     }
 
-    private Map<String, ReusableStep> catalog() {
+    // ---- whole jobs -------------------------------------------------------------------------
+
+    /** Whether {@code type} (e.g. {@code job:invoiceJob}) resolves to a reusable whole-job flow. */
+    public boolean containsJob(String type) {
+        return type != null && scan().jobs.containsKey(type.toLowerCase());
+    }
+
+    /** The ordered steps for a {@code job:<name>} type, or {@code null} if none. */
+    public List<Step> findJobSteps(String type) {
+        if (type == null) {
+            return null;
+        }
+        ReusableJob reusable = scan().jobs.get(type.toLowerCase());
+        return reusable == null ? null : reusable.steps();
+    }
+
+    /** All reusable whole-job flows currently derived from existing jobs, in discovery order. */
+    public List<ReusableJob> reusableJobs() {
+        return List.copyOf(scan().jobs.values());
+    }
+
+    // ---- internals --------------------------------------------------------------------------
+
+    private record Scan(Map<String, ReusableStep> steps, Map<String, ReusableJob> jobs) {
+    }
+
+    private Scan scan() {
         Set<String> excluded = excludedJobNames.get();
-        List<ReusableStep> found = new ArrayList<>();
+        // pass 1: collect each eligible job's ordered steps and count step-name occurrences
+        Map<String, List<Step>> stepsByJob = new LinkedHashMap<>();
         Map<String, Integer> nameCounts = new LinkedHashMap<>();
 
         for (String jobName : jobRegistry.getJobNames()) {
@@ -88,6 +126,7 @@ public class ExistingStepCatalog {
             } catch (Exception ex) {
                 continue;
             }
+            List<Step> jobSteps = new ArrayList<>();
             for (String stepName : stepNames) {
                 Step step;
                 try {
@@ -98,19 +137,26 @@ public class ExistingStepCatalog {
                 if (step == null) {
                     continue;
                 }
-                found.add(new ReusableStep(step.getName(), jobName, step));
+                jobSteps.add(step);
                 nameCounts.merge(step.getName(), 1, Integer::sum);
+            }
+            if (!jobSteps.isEmpty()) {
+                stepsByJob.put(jobName, jobSteps);
             }
         }
 
-        Map<String, ReusableStep> byType = new LinkedHashMap<>();
-        for (ReusableStep candidate : found) {
-            String stepName = candidate.step().getName();
-            String type = nameCounts.getOrDefault(stepName, 0) == 1
-                    ? stepName
-                    : candidate.jobName() + "." + stepName;
-            byType.putIfAbsent(type.toLowerCase(), new ReusableStep(type, candidate.jobName(), candidate.step()));
-        }
-        return byType;
+        // pass 2: build the step blocks (qualifying colliding names) and the whole-job blocks
+        Map<String, ReusableStep> steps = new LinkedHashMap<>();
+        Map<String, ReusableJob> jobs = new LinkedHashMap<>();
+        stepsByJob.forEach((jobName, jobSteps) -> {
+            for (Step step : jobSteps) {
+                String stepName = step.getName();
+                String type = nameCounts.getOrDefault(stepName, 0) == 1 ? stepName : jobName + "." + stepName;
+                steps.putIfAbsent(type.toLowerCase(), new ReusableStep(type, jobName, step));
+            }
+            String jobType = JOB_TYPE_PREFIX + jobName;
+            jobs.put(jobType.toLowerCase(), new ReusableJob(jobType, jobName, List.copyOf(jobSteps)));
+        });
+        return new Scan(steps, jobs);
     }
 }
