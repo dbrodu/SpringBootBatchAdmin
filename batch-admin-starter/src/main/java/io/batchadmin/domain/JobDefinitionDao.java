@@ -51,6 +51,11 @@ public class JobDefinitionDao {
         return new JobDefinitionRecord(id, jobName, description, stepsJson, now.toInstant());
     }
 
+    public void update(String jobName, String description, String stepsJson) {
+        jdbc.update("UPDATE " + TABLE + " SET DESCRIPTION = ?, STEPS_JSON = ? WHERE JOB_NAME = ?",
+                description, stepsJson, jobName);
+    }
+
     public Optional<JobDefinitionRecord> findByJobName(String jobName) {
         try {
             return Optional.of(jdbc.queryForObject(

@@ -229,6 +229,40 @@ public class DynamicJobService {
         return createJob(new CreateJobRequest(newName, "Clone of '" + sourceName + "'", steps));
     }
 
+    /** The stored definition (name, description, steps) of a dynamic job, for editing/inspection. */
+    public CreateJobRequest getDefinition(String jobName) {
+        JobDefinitionRecord record = definitionDao.findByJobName(jobName).orElseThrow(() ->
+                BatchAdminException.notFound("No dynamic job named '" + jobName + "'"));
+        return new CreateJobRequest(record.jobName(), record.description(), readSteps(record.stepsJson()));
+    }
+
+    /**
+     * Replaces the steps/description of an existing <b>dynamic</b> job in place (the name is fixed).
+     * The new composition is built and validated <i>before</i> the old job is swapped out, so a bad
+     * edit leaves the current job untouched.
+     */
+    public String updateJob(String jobName, CreateJobRequest request) {
+        if (!properties.getDynamicJobs().isEnabled()) {
+            throw BatchAdminException.badRequest("Dynamic job creation is disabled");
+        }
+        if (definitionDao.findByJobName(jobName).isEmpty()) {
+            throw BatchAdminException.notFound(
+                    "No dynamic job named '" + jobName + "' (only dynamic jobs can be edited)");
+        }
+        if (request.steps().isEmpty()) {
+            throw BatchAdminException.badRequest("A job needs at least one step");
+        }
+        validateSteps(request.steps());
+
+        Job rebuilt = buildJob(jobName, request.steps());   // build first: bad edits never drop the job
+        jobRegistry.unregister(jobName);
+        registerJob(rebuilt);
+        definitionDao.update(jobName, request.description(), writeSteps(request.steps()));
+
+        log.info("[batch-admin] Updated dynamic job '{}' with {} step(s)", jobName, request.steps().size());
+        return jobName;
+    }
+
     public void deleteJob(String jobName) {
         if (definitionDao.findByJobName(jobName).isEmpty()) {
             throw BatchAdminException.notFound(

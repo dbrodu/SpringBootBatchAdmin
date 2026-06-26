@@ -6,16 +6,20 @@
 <main class="app-main">
   <div th:replace="~{batch-admin/fragments :: banner}"></div>
 
-  <form class="panel" th:action="@{|${basePath}/jobs|}" method="post">
-    <h3>Create a job on the fly</h3>
+  <form class="panel" method="post"
+        th:action="${editJobName != null} ? @{|${basePath}/jobs/${editJobName}/edit|} : @{|${basePath}/jobs|}">
+    <h3 th:text="${editJobName != null} ? 'Edit job' : 'Create a job on the fly'">Create a job on the fly</h3>
     <p class="muted">
-      Compose a job from the building blocks (tasklet providers) exposed by the application.
-      It is registered immediately and becomes launchable and schedulable.
+      Compose a job from the building blocks the application exposes. It is registered immediately and
+      becomes launchable and schedulable.
     </p>
+
+    <input type="hidden" name="editJobName" th:if="${editJobName != null}" th:value="${editJobName}"/>
 
     <label class="field">
       <span>Job name</span>
-      <input name="jobName" placeholder="e.g. nightlyExport" th:value="${formJobName}" required/>
+      <input name="jobName" placeholder="e.g. nightlyExport" th:value="${formJobName}" required
+             th:readonly="${editJobName != null}"/>
     </label>
     <label class="field">
       <span>Description (optional)</span>
@@ -54,7 +58,9 @@
 
     <div class="inline-form">
       <button type="submit" th:formaction="@{|${basePath}/jobs/preview|}" class="btn">👁 Preview steps</button>
-      <button type="submit" class="btn btn-primary">Create job</button>
+      <button type="submit" class="btn btn-primary"
+              th:text="${editJobName != null} ? 'Save changes' : 'Create job'">Create job</button>
+      <a th:if="${editJobName != null}" th:href="@{|${basePath}/jobs|}" class="btn">Cancel</a>
     </div>
   </form>
 
@@ -100,7 +106,7 @@
     })();
   </script>
 
-  <form class="panel" th:action="@{|${basePath}/jobs/sql-export|}" method="post">
+  <form class="panel" th:action="@{|${basePath}/jobs/sql-export|}" method="post" th:if="${editJobName == null}">
     <h3>Create a SQL → target export</h3>
     <p class="muted">
       Compose a one-step export job: a paged SQL query is streamed, each row is turned into JSON and
