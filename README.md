@@ -133,6 +133,36 @@ never grows unbounded. The capture threshold, default read level and buffer size
 
 ---
 
+## Reusable building blocks
+
+### Generic SQL reader
+A configurable Spring Batch `ItemReader` that streams the rows of an arbitrary SQL query is shipped
+for use in your chunk-oriented steps — read each row as a `Map<String, Object>` with no mapping code,
+or map to your own type:
+
+```java
+// Rows as maps (column label -> value):
+GenericSqlItemReader<Map<String, Object>> reader = GenericSqlItemReaderBuilder.mapRows()
+        .name("ordersReader")
+        .dataSource(dataSource)
+        .sql("SELECT id, customer, amount FROM orders WHERE status = ?")
+        .parameters("NEW")
+        .fetchSize(500)
+        .build();
+
+// Or map to a type:
+GenericSqlItemReader<String> names = GenericSqlItemReaderBuilder
+        .mapWith((rs, rowNum) -> rs.getString("name"))
+        .name("names").dataSource(dataSource).sql("SELECT name FROM person ORDER BY id")
+        .build();
+```
+
+It is cursor-based (streams rows, low memory) and restartable: the query must impose a stable
+`ORDER BY` for restarts to skip already-processed rows correctly. `fetchSize`, `maxRows`,
+`queryTimeout` and `saveState` are configurable.
+
+---
+
 ## GUI routes
 
 The browser GUI is served under `${batch.admin.base-path}` (default `/batch-admin`):
