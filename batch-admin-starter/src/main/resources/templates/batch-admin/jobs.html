@@ -13,7 +13,7 @@
 
   <table class="grid">
     <thead>
-      <tr><th>Job</th><th>Type</th><th>Instances</th><th>Last status</th><th>Last run</th><th>Actions</th></tr>
+      <tr><th>Job</th><th>Type</th><th>Instances</th><th>Last status</th><th>Last run</th><th>Schedule</th><th>Actions</th></tr>
     </thead>
     <tbody>
       <tr th:each="job : ${jobs}">
@@ -27,6 +27,15 @@
         <td><span th:class="${@batchAdminFormat.statusClass(job.lastStatus())}"
                   th:text="${job.lastStatus() != null ? job.lastStatus() : '—'}">—</span></td>
         <td th:text="${@batchAdminFormat.date(job.lastExecution())}">—</td>
+        <td th:with="sched=${nextRuns.get(job.name())}">
+          <a th:if="${sched != null}" th:href="@{|${basePath}/schedules|}" class="schedule-cell">
+            <span th:if="${sched.enabled() and sched.nextExecution() != null}"
+                  th:text="${@batchAdminFormat.date(sched.nextExecution())}">next run</span>
+            <span th:unless="${sched.enabled() and sched.nextExecution() != null}" class="tag tag-muted">paused</span>
+            <span class="tag" th:text="${sched.cron()}">cron</span>
+          </a>
+          <span th:if="${sched == null}" class="muted">—</span>
+        </td>
         <td class="actions">
           <details>
             <summary class="btn btn-primary btn-small" th:if="${job.launchable()}">▶ Start</summary>
@@ -50,7 +59,7 @@
           </form>
         </td>
       </tr>
-      <tr th:if="${jobs.isEmpty()}"><td colspan="6" class="muted">No jobs found.</td></tr>
+      <tr th:if="${jobs.isEmpty()}"><td colspan="7" class="muted">No jobs found.</td></tr>
     </tbody>
   </table>
 </main>

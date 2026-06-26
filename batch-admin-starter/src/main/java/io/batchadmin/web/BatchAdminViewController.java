@@ -89,7 +89,33 @@ public class BatchAdminViewController {
     public String jobs(Model model) {
         model.addAttribute("active", "jobs");
         model.addAttribute("jobs", jobAdminService.listJobs());
+        model.addAttribute("nextRuns", nextRunByJob());
         return "batch-admin/jobs";
+    }
+
+    /** For each job, the schedule that fires soonest (enabled, earliest next run), for the Jobs grid. */
+    private Map<String, ScheduleInfo> nextRunByJob() {
+        JobSchedulingService scheduling = schedulingService.getIfAvailable();
+        if (scheduling == null) {
+            return Map.of();
+        }
+        Map<String, ScheduleInfo> soonest = new LinkedHashMap<>();
+        for (ScheduleInfo schedule : scheduling.listSchedules()) {
+            ScheduleInfo current = soonest.get(schedule.jobName());
+            if (current == null || firesSooner(schedule, current)) {
+                soonest.put(schedule.jobName(), schedule);
+            }
+        }
+        return soonest;
+    }
+
+    private static boolean firesSooner(ScheduleInfo candidate, ScheduleInfo current) {
+        java.time.Instant c = candidate.enabled() ? candidate.nextExecution() : null;
+        java.time.Instant e = current.enabled() ? current.nextExecution() : null;
+        if (c == null) {
+            return false;
+        }
+        return e == null || c.isBefore(e);
     }
 
     @GetMapping("/jobs/new")
