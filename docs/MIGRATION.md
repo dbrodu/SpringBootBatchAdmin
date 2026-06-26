@@ -85,8 +85,9 @@ spring:
       initialize-schema: always   # dev/test only; use a migration tool in prod
 ```
 
-The admin component persists its own small state (dynamic job definitions and schedules) in two
-extra tables, **`BATCH_ADMIN_JOB_DEFINITION`** and **`BATCH_ADMIN_JOB_SCHEDULE`**, which it creates
+The admin component persists its own small state (dynamic job definitions, their version history, and
+schedules) in a few extra tables — **`BATCH_ADMIN_JOB_DEFINITION`**,
+**`BATCH_ADMIN_JOB_DEFINITION_VERSION`** and **`BATCH_ADMIN_JOB_SCHEDULE`** — which it creates
 automatically with `CREATE TABLE IF NOT EXISTS` (H2 and PostgreSQL are supported out of the box). It
 uses plain JDBC on the shared `DataSource` and **never touches your JPA/ORM or transaction
 configuration**.
@@ -360,7 +361,7 @@ picker to insert them — see the building-blocks guide. Disable with
 **Does:**
 - Registers your `Job` beans into the `JobRegistry` (so they are launchable) and attaches its own
   listeners (per-execution log capture and lifecycle-event publishing) to them.
-- Adds two `BATCH_ADMIN_*` tables and serves a GUI + REST API under `batch.admin.base-path`.
+- Adds a few `BATCH_ADMIN_*` tables and serves a GUI + REST API under `batch.admin.base-path`.
 
 **Does not:**
 - Touch your JPA/Hibernate, transaction manager, or your own `jobLauncher`.

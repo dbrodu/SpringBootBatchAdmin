@@ -90,6 +90,13 @@ public class BatchAdminAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public io.batchadmin.domain.JobDefinitionVersionDao jobDefinitionVersionDao(DataSource dataSource,
+                                             BatchAdminSchemaInitializer schemaInitializer) {
+        return new io.batchadmin.domain.JobDefinitionVersionDao(dataSource);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public JobScheduleDao jobScheduleDao(DataSource dataSource,
                                          BatchAdminSchemaInitializer schemaInitializer) {
         return new JobScheduleDao(dataSource);
@@ -238,6 +245,7 @@ public class BatchAdminAutoConfiguration {
                                                JobRepository jobRepository,
                                                PlatformTransactionManager transactionManager,
                                                JobDefinitionDao jobDefinitionDao,
+                                               io.batchadmin.domain.JobDefinitionVersionDao jobDefinitionVersionDao,
                                                List<TaskletProvider> providers,
                                                List<io.batchadmin.dynamic.StepProvider> stepProviders,
                                                ObjectMapper objectMapper,
@@ -247,7 +255,7 @@ public class BatchAdminAutoConfiguration {
                                                io.batchadmin.metadata.ValueResolver valueResolver,
                                                io.batchadmin.dynamic.ExistingStepCatalog existingStepCatalog) {
         return new DynamicJobService(jobRegistry, jobRepository, transactionManager, jobDefinitionDao,
-                providers, stepProviders, objectMapper, properties,
+                jobDefinitionVersionDao, providers, stepProviders, objectMapper, properties,
                 componentJobListeners(logListener, eventListener), valueResolver, existingStepCatalog);
     }
 
