@@ -65,6 +65,15 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- Optional message broker: enables the RabbitMQ event publisher
+             (batch.admin.events.broker=rabbit). Optional so the component imposes no broker on host
+             applications that do not opt in; the default publisher uses in-process Spring events. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+            <optional>true</optional>
+        </dependency>
+
         <!-- Generates spring-configuration-metadata.json for the @ConfigurationProperties -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

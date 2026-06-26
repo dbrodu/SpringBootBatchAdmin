@@ -50,7 +50,7 @@ public class DynamicJobService {
     private final Map<String, StepProvider> stepProviders;
     private final ObjectMapper objectMapper;
     private final BatchAdminProperties properties;
-    private final JobExecutionListener jobLogListener;
+    private final List<JobExecutionListener> componentListeners;
     private final ValueResolver valueResolver;
 
     public DynamicJobService(JobRegistry jobRegistry,
@@ -61,7 +61,7 @@ public class DynamicJobService {
                              List<StepProvider> stepProviders,
                              ObjectMapper objectMapper,
                              BatchAdminProperties properties,
-                             JobExecutionListener jobLogListener,
+                             List<JobExecutionListener> componentListeners,
                              ValueResolver valueResolver) {
         this.jobRegistry = jobRegistry;
         this.jobRepository = jobRepository;
@@ -69,7 +69,7 @@ public class DynamicJobService {
         this.definitionDao = definitionDao;
         this.objectMapper = objectMapper;
         this.properties = properties;
-        this.jobLogListener = jobLogListener;
+        this.componentListeners = componentListeners == null ? List.of() : componentListeners;
         this.valueResolver = valueResolver;
         Map<String, TaskletProvider> byType = new LinkedHashMap<>();
         for (TaskletProvider provider : providers) {
@@ -168,8 +168,10 @@ public class DynamicJobService {
 
     private Job buildJob(String name, List<StepDefinition> steps) {
         JobBuilder jobBuilder = new JobBuilder(name, jobRepository).incrementer(new RunIdIncrementer());
-        if (jobLogListener != null) {
-            jobBuilder.listener(jobLogListener);
+        for (JobExecutionListener listener : componentListeners) {
+            if (listener != null) {
+                jobBuilder.listener(listener);
+            }
         }
         SimpleJobBuilder simpleBuilder = null;
         for (StepDefinition definition : steps) {
