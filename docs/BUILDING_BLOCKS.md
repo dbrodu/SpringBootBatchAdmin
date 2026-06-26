@@ -9,6 +9,10 @@ that implements one of two SPIs:
 | [`TaskletProvider`](#1-taskletprovider-a-single-step) | a single `Tasklet` step | one elementary operation — purge a table, send a report, call an API |
 | [`StepProvider`](#2-stepprovider-a-chunk-oriented-step) | a whole chunk-oriented `Step` (reader → processor → writer) | bulk data movement — read/transform/write many items |
 
+There is also a **third, zero-effort source of blocks**: the component automatically
+[**derives a block from every step of your existing jobs**](#3-reuse-a-step-from-an-existing-job-no-code),
+so a new on-the-fly job can reuse a step the application already defines — see §3.
+
 You add a building block by **declaring a bean** — nothing else. The component discovers every
 `TaskletProvider` / `StepProvider` bean on the context, lists them as available step *types*, and the
 [`DynamicJobService`](../batch-admin-starter/src/main/java/io/batchadmin/service/DynamicJobService.java)
@@ -159,7 +163,41 @@ to copy.
 
 ---
 
-## 3. Use your building block
+## 3. Reuse a step from an existing job (no code)
+
+You don't have to write anything for steps you **already have**. The component inspects every
+registered job and turns each of its steps into a reusable building block automatically — so a new
+on-the-fly job can drop in a step the application already defines, with no duplication.
+
+- The block **type** is the step's name (e.g. `extract`), or `\<jobName\>.\<stepName\>` when the same
+  step name exists in more than one job, so it stays unambiguous.
+- Selecting it **reuses the existing step instance as-is** — same reader/writer/tasklet, same logic.
+  It takes **no properties**.
+- Jobs created *through* the admin (dynamic jobs) are excluded, so only your genuine steps are offered.
+
+List what's available (also shown in the **Create job** screen):
+
+```bash
+curl http://localhost:8080/batch-admin/api/jobs/reusable-steps
+# [ { "type": "invoiceJob.extract", "displayName": "Reuse step 'extract' from job 'invoiceJob'", ... } ]
+```
+
+Then use the type like any other block — e.g. in the GUI:
+
+```
+pull = invoiceJob.extract
+load = csv-import (path=/in/data.csv)
+```
+
+Turn this off with `batch.admin.dynamic-jobs.reuse-existing-steps=false`.
+
+> Only jobs that expose their steps (`SimpleJob` / `FlowJob`, i.e. anything implementing Spring Batch's
+> `StepLocator`) contribute blocks. A step may legitimately belong to several jobs — reuse shares the
+> one instance; execution state is still tracked per job execution.
+
+---
+
+## 4. Use your building block
 
 Once the bean is on the context, a `csv-import` / `purge-table` step type is available everywhere.
 
@@ -193,7 +231,8 @@ like any other.
 `TaskletProvider` building blocks are listed (with their `displayName` and `describeProperties`) at:
 
 ```bash
-curl http://localhost:8080/batch-admin/api/jobs/providers
+curl http://localhost:8080/batch-admin/api/jobs/providers       # tasklet building blocks
+curl http://localhost:8080/batch-admin/api/jobs/reusable-steps  # blocks derived from existing jobs (§3)
 ```
 
 ---

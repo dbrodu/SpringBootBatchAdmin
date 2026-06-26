@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.batchadmin.autoconfigure.BatchAdminProperties;
 import io.batchadmin.domain.JobDefinitionDao;
 import io.batchadmin.domain.JobDefinitionRecord;
+import io.batchadmin.dynamic.ExistingStepCatalog;
 import io.batchadmin.dynamic.StepDefinition;
 import io.batchadmin.dynamic.StepProvider;
 import io.batchadmin.dynamic.TaskletProvider;
@@ -52,6 +53,7 @@ public class DynamicJobService {
     private final BatchAdminProperties properties;
     private final List<JobExecutionListener> componentListeners;
     private final ValueResolver valueResolver;
+    private final ExistingStepCatalog existingStepCatalog;
 
     public DynamicJobService(JobRegistry jobRegistry,
                              JobRepository jobRepository,
@@ -62,7 +64,8 @@ public class DynamicJobService {
                              ObjectMapper objectMapper,
                              BatchAdminProperties properties,
                              List<JobExecutionListener> componentListeners,
-                             ValueResolver valueResolver) {
+                             ValueResolver valueResolver,
+                             ExistingStepCatalog existingStepCatalog) {
         this.jobRegistry = jobRegistry;
         this.jobRepository = jobRepository;
         this.transactionManager = transactionManager;
@@ -71,6 +74,7 @@ public class DynamicJobService {
         this.properties = properties;
         this.componentListeners = componentListeners == null ? List.of() : componentListeners;
         this.valueResolver = valueResolver;
+        this.existingStepCatalog = existingStepCatalog;
         Map<String, TaskletProvider> byType = new LinkedHashMap<>();
         for (TaskletProvider provider : providers) {
             byType.put(provider.getType().toLowerCase(), provider);
@@ -93,6 +97,22 @@ public class DynamicJobService {
     public List<ProviderInfo> listStepProviders() {
         return stepProviders.values().stream()
                 .map(p -> new ProviderInfo(p.getType(), p.getDisplayName(), p.describeProperties()))
+                .toList();
+    }
+
+    /**
+     * Building blocks <b>derived from the host's existing jobs</b>: each reusable step is offered as a
+     * step type that drops the application's own step straight into a new on-the-fly job. Empty when
+     * {@code batch.admin.dynamic-jobs.reuse-existing-steps=false}.
+     */
+    public List<ProviderInfo> listReusableSteps() {
+        if (!properties.getDynamicJobs().isReuseExistingSteps()) {
+            return List.of();
+        }
+        return existingStepCatalog.reusableSteps().stream()
+                .map(s -> new ProviderInfo(s.type(),
+                        "Reuse step '" + s.step().getName() + "' from job '" + s.jobName() + "'",
+                        Map.of()))
                 .toList();
     }
 
@@ -151,15 +171,24 @@ public class DynamicJobService {
     // Internals
     // ----------------------------------------------------------------------------------------
 
+    private boolean reuseExistingSteps() {
+        return properties.getDynamicJobs().isReuseExistingSteps();
+    }
+
     private void validateSteps(List<StepDefinition> steps) {
         for (StepDefinition step : steps) {
             if (step.name() == null || step.name().isBlank()) {
                 throw BatchAdminException.badRequest("Every step needs a name");
             }
             String type = step.type() == null ? "" : step.type().toLowerCase();
-            if (!providers.containsKey(type) && !stepProviders.containsKey(type)) {
+            boolean known = providers.containsKey(type) || stepProviders.containsKey(type)
+                    || (reuseExistingSteps() && existingStepCatalog.contains(type));
+            if (!known) {
                 Set<String> available = new java.util.TreeSet<>(providers.keySet());
                 available.addAll(stepProviders.keySet());
+                if (reuseExistingSteps()) {
+                    existingStepCatalog.reusableSteps().forEach(s -> available.add(s.type()));
+                }
                 throw BatchAdminException.badRequest("Unknown step type '" + step.type()
                         + "'. Available types: " + available);
             }
@@ -195,6 +224,15 @@ public class DynamicJobService {
                         new StepProvider.Context(jobRepository, transactionManager));
             } catch (IllegalArgumentException ex) {
                 throw BatchAdminException.badRequest(ex.getMessage());
+            }
+        }
+
+        if (reuseExistingSteps()) {
+            // A step derived from an existing job: reuse that step instance as-is (it keeps its own
+            // name, and the same step may legitimately belong to more than one job).
+            Step existing = existingStepCatalog.find(type);
+            if (existing != null) {
+                return existing;
             }
         }
 
