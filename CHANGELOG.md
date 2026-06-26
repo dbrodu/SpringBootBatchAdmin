@@ -20,8 +20,9 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The **Create job** GUI gains a **building-block picker** (dropdown of every composable block —
   providers, reusable steps and whole-job blocks) that appends a ready-made step line, so operators
   pick blocks instead of typing their types.
-- The **Create job** GUI gains a **step-order** widget — ▲ / ▼ controls to reorder steps without
-  hand-editing the text area (kept in sync with it, progressive-enhancement vanilla JS).
+- The **Create job** / **Edit job** GUI gains a **drag-and-drop step-order** widget — drag the ⠿
+  handle to reorder steps without hand-editing the text area (kept in sync with it,
+  progressive-enhancement vanilla JS; the text area still works without JavaScript).
 
 **GUI**
 - The **Jobs** screen gains a **Schedule** column showing each job's next run (or *paused* + cron when
