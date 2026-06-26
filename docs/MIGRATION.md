@@ -343,6 +343,9 @@ plus generic `GenericSqlItemReader` / `JsonItemProcessor` / `GenericJsonItemWrit
 reuse in your own steps. Building these from the GUI lets operators run arbitrary `SELECT`s and push
 to a configured URL — another reason to protect `/batch-admin/**` (§6).
 
+> See the **[Building blocks guide](BUILDING_BLOCKS.md)** for a step-by-step walkthrough of both SPIs
+> (`TaskletProvider` and `StepProvider`), with full worked examples, property handling and tips.
+
 ---
 
 ## 13. What the component does and does not change
