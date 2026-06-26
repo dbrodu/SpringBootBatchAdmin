@@ -173,6 +173,13 @@ public class BatchAdminAutoConfiguration {
         return new CommandTaskletProvider();
     }
 
+    /** Composable SQL -> JSON -> target (e.g. OpenSearch) export step, usable from the API and GUI. */
+    @Bean
+    @ConditionalOnMissingBean(io.batchadmin.dynamic.provider.SqlExportStepProvider.class)
+    public io.batchadmin.dynamic.provider.SqlExportStepProvider sqlExportStepProvider(DataSource dataSource) {
+        return new io.batchadmin.dynamic.provider.SqlExportStepProvider(dataSource);
+    }
+
     // ----------------------------------------------------------------------------------------
     // Services
     // ----------------------------------------------------------------------------------------
@@ -197,11 +204,12 @@ public class BatchAdminAutoConfiguration {
                                                PlatformTransactionManager transactionManager,
                                                JobDefinitionDao jobDefinitionDao,
                                                List<TaskletProvider> providers,
+                                               List<io.batchadmin.dynamic.StepProvider> stepProviders,
                                                ObjectMapper objectMapper,
                                                BatchAdminProperties properties,
                                                ObjectProvider<io.batchadmin.logs.JobLogExecutionListener> logListener) {
         return new DynamicJobService(jobRegistry, jobRepository, transactionManager, jobDefinitionDao,
-                providers, objectMapper, properties, logListener.getIfAvailable());
+                providers, stepProviders, objectMapper, properties, logListener.getIfAvailable());
     }
 
     @Bean

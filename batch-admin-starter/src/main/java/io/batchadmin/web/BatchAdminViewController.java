@@ -95,6 +95,7 @@ public class BatchAdminViewController {
     public String newJob(Model model) {
         model.addAttribute("active", "create");
         model.addAttribute("providers", dynamicJobService.listProviders());
+        model.addAttribute("stepProviders", dynamicJobService.listStepProviders());
         return "batch-admin/create-job";
     }
 
@@ -154,6 +155,30 @@ public class BatchAdminViewController {
             List<StepDefinition> stepDefinitions = parseSteps(steps);
             String name = dynamicJobService.createJob(new CreateJobRequest(jobName, description, stepDefinitions));
             flash(redirect, false, "Created job '" + name + "'.");
+            return redirect(redirect, "/jobs");
+        } catch (BatchAdminException | IllegalArgumentException ex) {
+            flash(redirect, true, ex.getMessage());
+            return redirect(redirect, "/jobs/new");
+        }
+    }
+
+    @PostMapping("/jobs/sql-export")
+    public String createSqlExport(@RequestParam String jobName,
+                                  @RequestParam(required = false) String description,
+                                  @RequestParam Map<String, String> form,
+                                  RedirectAttributes redirect) {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        for (String key : List.of("select", "from", "where", "sort", "pageSize",
+                "target", "baseUrl", "index", "idField", "authHeader")) {
+            String value = form.get(key);
+            if (value != null && !value.isBlank()) {
+                properties.put(key, value.trim());
+            }
+        }
+        StepDefinition step = new StepDefinition("export", "sql-export", properties);
+        try {
+            String name = dynamicJobService.createJob(new CreateJobRequest(jobName, description, List.of(step)));
+            flash(redirect, false, "Created export job '" + name + "'.");
             return redirect(redirect, "/jobs");
         } catch (BatchAdminException | IllegalArgumentException ex) {
             flash(redirect, true, ex.getMessage());

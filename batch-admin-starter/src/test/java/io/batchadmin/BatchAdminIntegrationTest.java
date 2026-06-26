@@ -12,6 +12,7 @@ import io.batchadmin.web.dto.ScheduleRequest;
 import io.batchadmin.dynamic.StepDefinition;
 import java.util.List;
 import java.util.Map;
+import javax.sql.DataSource;
 import org.awaitility.Awaitility;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
@@ -22,6 +23,7 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest(classes = TestBatchApplication.class,
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -29,6 +31,9 @@ class BatchAdminIntegrationTest {
 
     @Autowired
     private TestRestTemplate rest;
+
+    @Autowired
+    private DataSource dataSource;
 
     private String api(String path) {
         return "/batch-admin/api" + path;
@@ -126,6 +131,50 @@ class BatchAdminIntegrationTest {
         ScheduleRequest request = new ScheduleRequest("sampleTestJob", "not-a-cron", null, true, Map.of());
         ResponseEntity<String> response = rest.postForEntity(api("/schedules"), request, String.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void composesAndRunsASqlExportJob() {
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        jdbc.execute("CREATE TABLE IF NOT EXISTS EXPORT_SRC (ID INT PRIMARY KEY, NAME VARCHAR(50))");
+        jdbc.update("DELETE FROM EXPORT_SRC");
+        jdbc.update("INSERT INTO EXPORT_SRC (ID, NAME) VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Carol')");
+
+        // The sql-export step type is available because a DataSource is present.
+        ResponseEntity<List<ProviderInfo>> stepProviders = rest.exchange(api("/jobs/providers"), HttpMethod.GET, null,
+                new ParameterizedTypeReference<>() {
+                });
+        // (providers endpoint lists tasklet providers; sql-export is a step provider, exercised below.)
+        assertThat(stepProviders.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        Map<String, Object> exportProps = Map.of(
+                "select", "ID, NAME", "from", "EXPORT_SRC", "sort", "ID", "pageSize", "2", "target", "log");
+        CreateJobRequest request = new CreateJobRequest("sqlExportJob", "export to log",
+                List.of(new StepDefinition("export", "sql-export", exportProps)));
+        ResponseEntity<JobSummary> created = rest.postForEntity(api("/jobs"), request, JobSummary.class);
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(created.getBody().dynamic()).isTrue();
+
+        ResponseEntity<ExecutionSummary> started = rest.postForEntity(api("/jobs/sqlExportJob/executions"),
+                Map.of("parameters", Map.of()), ExecutionSummary.class);
+        long executionId = started.getBody().executionId();
+
+        Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+            ExecutionSummary execution = rest.getForObject(api("/executions/" + executionId), ExecutionSummary.class);
+            assertThat(execution.status()).isEqualTo("COMPLETED");
+        });
+
+        // The log sink wrote each row as JSON; the per-execution logs captured those lines.
+        Awaitility.await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
+            ResponseEntity<List<Map<String, Object>>> logs = rest.exchange(
+                    api("/executions/" + executionId + "/logs?level=INFO"), HttpMethod.GET, null,
+                    new ParameterizedTypeReference<>() {
+                    });
+            assertThat(logs.getBody()).anyMatch(e -> {
+                String message = String.valueOf(e.get("message"));
+                return message.contains("json>") && message.contains("\"NAME\":\"Alice\"");
+            });
+        });
     }
 
     @Test

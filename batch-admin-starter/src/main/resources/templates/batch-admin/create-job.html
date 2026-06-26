@@ -31,6 +31,55 @@
     <button type="submit" class="btn btn-primary">Create job</button>
   </form>
 
+  <form class="panel" th:action="@{|${basePath}/jobs/sql-export|}" method="post">
+    <h3>Create a SQL → target export</h3>
+    <p class="muted">
+      Compose a one-step export job: a paged SQL query is streamed, each row is turned into JSON and
+      sent to the target (OpenSearch via its <code>_bulk</code> API, or the application log for a dry run).
+      No code required — it is registered immediately and becomes launchable and schedulable.
+    </p>
+
+    <label class="field">
+      <span>Job name</span>
+      <input name="jobName" placeholder="e.g. ordersToOpenSearch" required/>
+    </label>
+    <label class="field">
+      <span>Description (optional)</span>
+      <input name="description" placeholder="optional"/>
+    </label>
+
+    <h4>Query</h4>
+    <label class="field"><span>SELECT (columns)</span>
+      <input name="select" placeholder="id, customer, amount" required/></label>
+    <label class="field"><span>FROM</span>
+      <input name="from" placeholder="orders" required/></label>
+    <label class="field"><span>WHERE (optional, use literals)</span>
+      <input name="where" placeholder="status = 'NEW'"/></label>
+    <div class="inline-form">
+      <label class="field"><span>Sort (— for desc)</span>
+        <input name="sort" class="cron-input" placeholder="id or id,-created_at" required/></label>
+      <label class="field"><span>Page size</span>
+        <input name="pageSize" type="number" value="500" style="max-width:120px"/></label>
+    </div>
+
+    <h4>Target</h4>
+    <label class="field"><span>Target</span>
+      <select name="target">
+        <option value="opensearch">OpenSearch (_bulk)</option>
+        <option value="log">Log (dry run)</option>
+      </select></label>
+    <label class="field"><span>Base URL (OpenSearch)</span>
+      <input name="baseUrl" placeholder="https://opensearch:9200"/></label>
+    <div class="inline-form">
+      <label class="field"><span>Index</span><input name="index" placeholder="orders"/></label>
+      <label class="field"><span>_id field (optional)</span><input name="idField" placeholder="id"/></label>
+    </div>
+    <label class="field" style="max-width:680px"><span>Authorization header (optional)</span>
+      <input name="authHeader" placeholder="Basic …  /  ApiKey …"/></label>
+
+    <button type="submit" class="btn btn-primary">Create export job</button>
+  </form>
+
   <div class="panel">
     <h4>Available building blocks</h4>
     <table class="grid">
