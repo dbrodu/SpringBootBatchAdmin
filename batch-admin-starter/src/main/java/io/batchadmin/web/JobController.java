@@ -52,6 +52,12 @@ public class JobController {
         return dynamicJobService.listReusableSteps();
     }
 
+    /** Building blocks that reuse a whole existing job's flow (all its steps), typed {@code job:<name>}. */
+    @GetMapping("/reusable-jobs")
+    public List<ProviderInfo> listReusableJobs() {
+        return dynamicJobService.listReusableJobs();
+    }
+
     @GetMapping("/{jobName}")
     public JobSummary getJob(@PathVariable String jobName) {
         return jobAdminService.getJob(jobName);

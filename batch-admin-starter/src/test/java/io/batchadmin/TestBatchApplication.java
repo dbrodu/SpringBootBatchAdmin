@@ -25,4 +25,18 @@ public class TestBatchApplication {
                         .build())
                 .build();
     }
+
+    /** A two-step host job, used to exercise reusing a whole job's flow as one building block. */
+    @Bean
+    public Job twoStepJob(JobRepository jobRepository, PlatformTransactionManager transactionManager) {
+        return new JobBuilder("twoStepJob", jobRepository)
+                .incrementer(new RunIdIncrementer())
+                .start(new StepBuilder("twoStepJob.first", jobRepository)
+                        .tasklet((contribution, chunkContext) -> RepeatStatus.FINISHED, transactionManager)
+                        .build())
+                .next(new StepBuilder("twoStepJob.second", jobRepository)
+                        .tasklet((contribution, chunkContext) -> RepeatStatus.FINISHED, transactionManager)
+                        .build())
+                .build();
+    }
 }

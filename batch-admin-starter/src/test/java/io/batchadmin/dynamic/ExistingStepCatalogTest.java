@@ -71,6 +71,23 @@ class ExistingStepCatalogTest {
     }
 
     @Test
+    void exposesAWholeJobsFlowAsASingleBlock() throws Exception {
+        JobRegistry registry = mock(JobRegistry.class);
+        when(registry.getJobNames()).thenReturn(Set.of("invoiceJob"));
+        Step extract = step("extract");
+        Step load = step("load");
+        jobWithSteps(registry, "invoiceJob", extract, load);
+
+        ExistingStepCatalog catalog = new ExistingStepCatalog(registry, Set::of);
+
+        assertThat(catalog.reusableJobs()).extracting(ExistingStepCatalog.ReusableJob::type)
+                .containsExactly("job:invoiceJob");
+        assertThat(catalog.containsJob("JOB:invoiceJob")).isTrue();        // case-insensitive
+        assertThat(catalog.findJobSteps("job:invoiceJob")).containsExactly(extract, load);  // in order
+        assertThat(catalog.findJobSteps("job:missing")).isNull();
+    }
+
+    @Test
     void excludesTheGivenJobs() throws Exception {
         JobRegistry registry = mock(JobRegistry.class);
         when(registry.getJobNames()).thenReturn(new java.util.LinkedHashSet<>(List.of("hostJob", "dynamicJob")));
