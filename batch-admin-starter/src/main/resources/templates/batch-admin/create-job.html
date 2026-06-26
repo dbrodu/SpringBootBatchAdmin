@@ -58,8 +58,9 @@
 
     <div class="field" style="max-width:680px">
       <span>Step order</span>
-      <div id="step-order" style="display:flex; flex-direction:column; gap:4px"></div>
-      <span class="hint">Use ▲ / ▼ or drag the ⠿ handle to reorder steps without editing the text above.</span>
+      <div id="step-order" style="display:flex; flex-direction:column; gap:6px; min-height:8px"></div>
+      <span class="hint">Use ▲ / ▼ or drag the ⠿ handle to reorder steps without editing the text above —
+        grab a card and drop it where the blue line appears (drop past the last card to send it to the end).</span>
     </div>
 
     <div class="inline-form">
@@ -109,16 +110,26 @@
       }
 
       var dragFrom = null;
+      var dragRow = null;
       function clearMarkers() {
         var rows = order.children;
         for (var k = 0; k < rows.length; k = k + 1) {
-          rows[k].style.borderTop = '';
-          rows[k].style.borderBottom = '';
+          rows[k].style.boxShadow = '';
         }
       }
       function dropsAfter(row, clientY) {
         var rect = row.getBoundingClientRect();
         return (clientY - rect.top) >= (rect.height / 2);
+      }
+      function endDrag() {
+        if (dragRow) {
+          dragRow.style.opacity = '';
+          dragRow.style.cursor = 'grab';
+        }
+        dragFrom = null;
+        dragRow = null;
+        order.style.cursor = '';
+        clearMarkers();
       }
 
       function renderOrder() {
@@ -134,12 +145,36 @@
         }
         lines.forEach(function (line, i) {
           var row = document.createElement('div');
-          row.draggable = true;
+          // Only the ⠿ handle starts a drag; the row is armed on handle press so
+          // clicking the ▲/▼ buttons never grabs the card.
+          row.draggable = false;
           row.style.display = 'flex';
-          row.style.gap = '6px';
+          row.style.gap = '8px';
           row.style.alignItems = 'center';
-          row.style.cursor = 'grab';
-          row.style.padding = '2px 0';
+          row.style.padding = '7px 10px';
+          row.style.border = '1px solid var(--border)';
+          row.style.borderRadius = 'var(--r-md)';
+          row.style.background = 'var(--surface)';
+          row.style.transition = 'background .12s ease, box-shadow .12s ease';
+          row.addEventListener('mouseenter', function () {
+            if (!dragRow) { row.style.background = 'var(--surface-2)'; }
+          });
+          row.addEventListener('mouseleave', function () {
+            if (dragRow !== row) { row.style.background = 'var(--surface)'; }
+          });
+
+          var handle = document.createElement('span');
+          handle.textContent = '⠿';
+          handle.title = 'Drag to reorder';
+          handle.setAttribute('aria-hidden', 'true');
+          handle.style.cursor = 'grab';
+          handle.style.opacity = '0.55';
+          handle.style.fontSize = '1.1em';
+          handle.style.padding = '0 2px';
+          handle.style.userSelect = 'none';
+          handle.addEventListener('mousedown', function () { row.draggable = true; });
+          handle.addEventListener('mouseup', function () { row.draggable = false; });
+
           var up = document.createElement('button');
           up.type = 'button'; up.className = 'btn btn-small'; up.textContent = '▲';
           up.title = 'Move up'; up.disabled = (i === 0);
@@ -148,22 +183,25 @@
           down.type = 'button'; down.className = 'btn btn-small'; down.textContent = '▼';
           down.title = 'Move down'; down.disabled = (i === lines.length - 1);
           down.addEventListener('click', function () { moveLine(i, i + 2); });
-          var handle = document.createElement('span');
-          handle.textContent = '⠿';
-          handle.title = 'Drag to reorder';
-          handle.setAttribute('aria-hidden', 'true');
-          handle.style.cursor = 'grab';
-          handle.style.opacity = '0.6';
+
           var label = document.createElement('code');
           label.textContent = line.trim();
+          label.style.flex = '1';
+          label.style.whiteSpace = 'nowrap';
+          label.style.overflow = 'hidden';
+          label.style.textOverflow = 'ellipsis';
+
+          row.appendChild(handle);
           row.appendChild(up);
           row.appendChild(down);
-          row.appendChild(handle);
           row.appendChild(label);
 
           row.addEventListener('dragstart', function (e) {
             dragFrom = i;
-            row.style.opacity = '0.4';
+            dragRow = row;
+            row.style.opacity = '0.45';
+            handle.style.cursor = 'grabbing';
+            order.style.cursor = 'grabbing';
             if (e.dataTransfer) {
               e.dataTransfer.effectAllowed = 'move';
               try { e.dataTransfer.setData('text/plain', String(i)); } catch (ignored) { }
@@ -173,29 +211,40 @@
             e.preventDefault();
             if (e.dataTransfer) { e.dataTransfer.dropEffect = 'move'; }
             clearMarkers();
+            if (row === dragRow) { return; }
             if (dropsAfter(row, e.clientY)) {
-              row.style.borderBottom = '2px solid currentColor';
+              row.style.boxShadow = 'inset 0 -3px 0 0 var(--accent)';
             } else {
-              row.style.borderTop = '2px solid currentColor';
+              row.style.boxShadow = 'inset 0 3px 0 0 var(--accent)';
             }
           });
-          row.addEventListener('dragleave', function () { clearMarkers(); });
           row.addEventListener('drop', function (e) {
             e.preventDefault();
-            clearMarkers();
-            if (dragFrom === null) { return; }
+            e.stopPropagation();
+            if (dragFrom === null) { endDrag(); return; }
             var insertAt = dropsAfter(row, e.clientY) ? (i + 1) : i;
             moveLine(dragFrom, insertAt);
-            dragFrom = null;
+            endDrag();
           });
-          row.addEventListener('dragend', function () {
-            dragFrom = null;
-            row.style.opacity = '';
-            clearMarkers();
-          });
+          row.addEventListener('dragend', endDrag);
           order.appendChild(row);
         });
       }
+
+      // Dropping in the gap below the last card (or anywhere not on a card) sends the step to the end.
+      order.addEventListener('dragover', function (e) {
+        if (dragFrom !== null) { e.preventDefault(); }
+      });
+      order.addEventListener('drop', function (e) {
+        if (dragFrom === null) { return; }
+        e.preventDefault();
+        moveLine(dragFrom, getLines().length);
+        endDrag();
+      });
+      order.addEventListener('dragleave', function (e) {
+        if (e.target === order) { clearMarkers(); }
+      });
+
       steps.addEventListener('input', renderOrder);
       renderOrder();
 
