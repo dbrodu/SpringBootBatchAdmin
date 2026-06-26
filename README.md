@@ -50,7 +50,7 @@ Add the dependency to any Spring Boot Batch application:
 That is all. The component auto-configures itself as soon as Spring Batch, a `DataSource` and Spring
 Web are on the classpath. It discovers your existing `Job` beans, registers them so they are
 launchable, serves its Thymeleaf GUI, and never touches your application's own JPA/transaction
-configuration (its own state is persisted through plain JDBC in two `BATCH_ADMIN_*` tables created
+configuration (its own state is persisted through plain JDBC in a few `BATCH_ADMIN_*` tables created
 automatically). The GUI pulls in `spring-boot-starter-thymeleaf` transitively.
 
 > **Migrating existing jobs?** See the **[Migration guide](docs/MIGRATION.md)** — a step-by-step
@@ -103,7 +103,9 @@ You can **preview** a composition before creating it (the *Preview steps* button
 into a new dynamic one in a click (the *Clone* button, or `POST .../api/jobs/<name>/clone`), and
 **edit** a dynamic job's steps in place (the *Edit* action, or `PUT .../api/jobs/<name>`). Dynamic jobs
 can also be **exported/imported as JSON** to move them between environments (the *Import / export*
-panel, or `GET/POST .../api/jobs/export` and `…/import`).
+panel, or `GET/POST .../api/jobs/export` and `…/import`), and every edit is **versioned** so you can
+review the **history** and **roll back** a definition (the *History* action, or
+`.../api/jobs/<name>/versions` and `…/rollback?version=N`).
 
 > **Adding your own building block?** See the **[Building blocks guide](docs/BUILDING_BLOCKS.md)** — a
 > step-by-step walkthrough of the `TaskletProvider` and `StepProvider` SPIs, deriving blocks from

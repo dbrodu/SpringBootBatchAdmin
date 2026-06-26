@@ -45,6 +45,11 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `POST <base-path>/api/jobs/import?overwrite=` (existing jobs are skipped, or overwritten when
   `overwrite=true`; names colliding with a declared job are reported as failed). The **Jobs** screen
   gains an *Import / export* panel (download + paste-to-import).
+- **Version history & rollback** for dynamic jobs — every create/edit/rollback appends an immutable
+  snapshot to a new `BATCH_ADMIN_JOB_DEFINITION_VERSION` table. View the history and **roll back** to a
+  previous definition via `GET <base-path>/api/jobs/<name>/versions` and
+  `POST <base-path>/api/jobs/<name>/rollback?version=N`, or the *History* action on the **Jobs**
+  screen. A rollback is recorded as a new version, so it is itself reversible.
 
 **Reusable SQL → JSON → target building blocks**
 - `GenericSqlItemReader` / `GenericSqlItemReaderBuilder` — a configurable `ItemReader` that streams the

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{batch-admin/fragments :: head('Batch Admin — Job history')}"></head>
+<body>
+<header th:replace="~{batch-admin/fragments :: nav('jobs')}"></header>
+<main class="app-main">
+  <div th:replace="~{batch-admin/fragments :: banner}"></div>
+
+  <div class="toolbar">
+    <a class="btn" th:href="@{|${basePath}/jobs|}">← Jobs</a>
+    <a class="btn" th:href="@{|${basePath}/jobs/${jobName}/edit|}">✎ Edit</a>
+  </div>
+
+  <h3>Version history — <code th:text="${jobName}">jobName</code></h3>
+  <p class="muted">Every create, edit and rollback appends a version. Roll back to restore a previous
+    definition — the restored content is recorded as a new version, so rollbacks are themselves
+    reversible.</p>
+
+  <table class="grid">
+    <thead>
+      <tr><th>Version</th><th>When</th><th>Steps</th><th>Description</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      <tr th:each="v : ${versions}">
+        <td>
+          <strong th:text="${v.version()}">3</strong>
+          <span class="tag" th:if="${v.current()}">current</span>
+        </td>
+        <td th:text="${@batchAdminFormat.date(v.createdAt())}">—</td>
+        <td>
+          <details>
+            <summary th:text="${v.steps().size()} + ' step(s)'">2 steps</summary>
+            <ol style="margin:6px 0 0 18px">
+              <li th:each="s : ${v.steps()}"><code th:text="${s.name()} + ' = ' + ${s.type()}">a = log</code></li>
+            </ol>
+          </details>
+        </td>
+        <td class="muted" th:text="${v.description() != null ? v.description() : '—'}">—</td>
+        <td>
+          <form th:unless="${v.current()}" th:action="@{|${basePath}/jobs/${jobName}/rollback|}" method="post"
+                onsubmit="return confirm('Roll back to this version?');" style="display:inline">
+            <input type="hidden" name="version" th:value="${v.version()}"/>
+            <button type="submit" class="btn btn-small">↩ Roll back</button>
+          </form>
+          <span th:if="${v.current()}" class="muted">current</span>
+        </td>
+      </tr>
+      <tr th:if="${versions.isEmpty()}"><td colspan="5" class="muted">No history yet.</td></tr>
+    </tbody>
+  </table>
+</main>
+<footer th:replace="~{batch-admin/fragments :: footer}"></footer>
+</body>
+</html>

@@ -8,6 +8,7 @@ import io.batchadmin.web.dto.ExecutionSummary;
 import io.batchadmin.web.dto.ImportResult;
 import io.batchadmin.web.dto.JobPreview;
 import io.batchadmin.web.dto.JobSummary;
+import io.batchadmin.web.dto.JobVersionInfo;
 import io.batchadmin.web.dto.ProviderInfo;
 import io.batchadmin.web.dto.StartJobRequest;
 import java.util.List;
@@ -84,6 +85,18 @@ public class JobController {
     @GetMapping("/{jobName}/export")
     public CreateJobRequest exportJob(@PathVariable String jobName) {
         return dynamicJobService.exportJob(jobName);
+    }
+
+    /** A dynamic job's version history (newest first). */
+    @GetMapping("/{jobName}/versions")
+    public List<JobVersionInfo> listVersions(@PathVariable String jobName) {
+        return dynamicJobService.listVersions(jobName);
+    }
+
+    /** Rolls a dynamic job back to a previous version (recorded as a new version). */
+    @PostMapping("/{jobName}/rollback")
+    public JobSummary rollback(@PathVariable String jobName, @RequestParam int version) {
+        return jobAdminService.getJob(dynamicJobService.rollbackJob(jobName, version));
     }
 
     @PostMapping

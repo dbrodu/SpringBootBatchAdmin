@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.batchadmin.autoconfigure.BatchAdminProperties;
 import io.batchadmin.domain.JobDefinitionDao;
 import io.batchadmin.domain.JobDefinitionRecord;
+import io.batchadmin.domain.JobDefinitionVersionDao;
+import io.batchadmin.domain.JobDefinitionVersionRecord;
 import io.batchadmin.dynamic.ExistingStepCatalog;
 import io.batchadmin.dynamic.StepDefinition;
 import io.batchadmin.dynamic.StepProvider;
@@ -14,6 +16,7 @@ import io.batchadmin.web.dto.CreateJobRequest;
 import io.batchadmin.web.dto.ImportResult;
 import io.batchadmin.web.dto.JobPreview;
 import io.batchadmin.web.dto.JobStepPreview;
+import io.batchadmin.web.dto.JobVersionInfo;
 import io.batchadmin.web.dto.ProviderInfo;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -52,6 +55,7 @@ public class DynamicJobService {
     private final JobRepository jobRepository;
     private final PlatformTransactionManager transactionManager;
     private final JobDefinitionDao definitionDao;
+    private final JobDefinitionVersionDao versionDao;
     private final Map<String, TaskletProvider> providers;
     private final Map<String, StepProvider> stepProviders;
     private final ObjectMapper objectMapper;
@@ -64,6 +68,7 @@ public class DynamicJobService {
                              JobRepository jobRepository,
                              PlatformTransactionManager transactionManager,
                              JobDefinitionDao definitionDao,
+                             JobDefinitionVersionDao versionDao,
                              List<TaskletProvider> providers,
                              List<StepProvider> stepProviders,
                              ObjectMapper objectMapper,
@@ -75,6 +80,7 @@ public class DynamicJobService {
         this.jobRepository = jobRepository;
         this.transactionManager = transactionManager;
         this.definitionDao = definitionDao;
+        this.versionDao = versionDao;
         this.objectMapper = objectMapper;
         this.properties = properties;
         this.componentListeners = componentListeners == null ? List.of() : componentListeners;
@@ -155,10 +161,17 @@ public class DynamicJobService {
 
         Job job = buildJob(name, request.steps());
         registerJob(job);
-        definitionDao.save(name, request.description(), writeSteps(request.steps()));
+        String stepsJson = writeSteps(request.steps());
+        definitionDao.save(name, request.description(), stepsJson);
+        recordVersion(name, request.description(), stepsJson);
 
         log.info("[batch-admin] Created dynamic job '{}' with {} step(s)", name, request.steps().size());
         return name;
+    }
+
+    /** Appends a snapshot of the job's current definition to its version history. */
+    private void recordVersion(String jobName, String description, String stepsJson) {
+        versionDao.save(jobName, versionDao.nextVersion(jobName), description, stepsJson);
     }
 
     /**
@@ -258,7 +271,9 @@ public class DynamicJobService {
         Job rebuilt = buildJob(jobName, request.steps());   // build first: bad edits never drop the job
         jobRegistry.unregister(jobName);
         registerJob(rebuilt);
-        definitionDao.update(jobName, request.description(), writeSteps(request.steps()));
+        String stepsJson = writeSteps(request.steps());
+        definitionDao.update(jobName, request.description(), stepsJson);
+        recordVersion(jobName, request.description(), stepsJson);
 
         log.info("[batch-admin] Updated dynamic job '{}' with {} step(s)", jobName, request.steps().size());
         return jobName;
@@ -271,7 +286,41 @@ public class DynamicJobService {
         }
         jobRegistry.unregister(jobName);
         definitionDao.deleteByJobName(jobName);
+        versionDao.deleteByJobName(jobName);
         log.info("[batch-admin] Deleted dynamic job '{}'", jobName);
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Version history & rollback
+    // ----------------------------------------------------------------------------------------
+
+    /** A dynamic job's version history, newest first; the highest version is the current one. */
+    public List<JobVersionInfo> listVersions(String jobName) {
+        if (definitionDao.findByJobName(jobName).isEmpty()) {
+            throw BatchAdminException.notFound("No dynamic job named '" + jobName + "'");
+        }
+        List<JobDefinitionVersionRecord> records = versionDao.findByJobName(jobName);
+        int current = records.stream().mapToInt(JobDefinitionVersionRecord::version).max().orElse(0);
+        return records.stream()
+                .map(r -> new JobVersionInfo(r.version(), r.description(), readSteps(r.stepsJson()),
+                        r.createdAt(), r.version() == current))
+                .toList();
+    }
+
+    /**
+     * Restores a dynamic job to a previous version. The old definition is rebuilt and validated, then
+     * swapped in, and the restored content is appended as a <b>new</b> version (history is never
+     * rewritten), so a rollback can itself be rolled back.
+     */
+    public String rollbackJob(String jobName, int version) {
+        if (definitionDao.findByJobName(jobName).isEmpty()) {
+            throw BatchAdminException.notFound(
+                    "No dynamic job named '" + jobName + "' (only dynamic jobs have versions)");
+        }
+        JobDefinitionVersionRecord target = versionDao.find(jobName, version).orElseThrow(() ->
+                BatchAdminException.notFound("Job '" + jobName + "' has no version " + version));
+        List<StepDefinition> steps = readSteps(target.stepsJson());
+        return updateJob(jobName, new CreateJobRequest(jobName, target.description(), steps));
     }
 
     // ----------------------------------------------------------------------------------------
@@ -372,6 +421,10 @@ public class DynamicJobService {
             try {
                 List<StepDefinition> steps = readSteps(record.stepsJson());
                 registerJob(buildJob(record.jobName(), steps));
+                // Backfill a baseline version for jobs persisted before version history existed.
+                if (!versionDao.existsByJobName(record.jobName())) {
+                    recordVersion(record.jobName(), record.description(), record.stepsJson());
+                }
                 log.info("[batch-admin] Re-registered persisted dynamic job '{}'", record.jobName());
             } catch (RuntimeException ex) {
                 log.warn("[batch-admin] Could not re-register dynamic job '{}': {}",
