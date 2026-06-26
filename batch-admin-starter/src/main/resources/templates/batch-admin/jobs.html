@@ -38,6 +38,12 @@
               <button type="submit" class="btn btn-primary">Launch</button>
             </form>
           </details>
+          <form th:action="@{|${basePath}/jobs/${job.name()}/clone|}" method="post"
+                style="display:inline-flex; gap:4px; align-items:center">
+            <input name="newName" th:value="${job.name()} + '-copy'" class="cron-input"
+                   style="max-width:140px" aria-label="Clone name"/>
+            <button type="submit" class="btn btn-small">⎘ Clone</button>
+          </form>
           <form th:if="${job.dynamic()}" th:action="@{|${basePath}/jobs/${job.name()}/delete|}" method="post"
                 onsubmit="return confirm('Delete this dynamic job?');" style="display:inline">
             <button type="submit" class="btn btn-danger btn-small">🗑 Delete</button>

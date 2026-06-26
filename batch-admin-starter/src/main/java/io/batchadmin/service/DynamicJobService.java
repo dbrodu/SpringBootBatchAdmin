@@ -11,10 +11,14 @@ import io.batchadmin.dynamic.StepProvider;
 import io.batchadmin.dynamic.TaskletProvider;
 import io.batchadmin.metadata.ValueResolver;
 import io.batchadmin.web.dto.CreateJobRequest;
+import io.batchadmin.web.dto.JobPreview;
+import io.batchadmin.web.dto.JobStepPreview;
 import io.batchadmin.web.dto.ProviderInfo;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -154,6 +158,75 @@ public class DynamicJobService {
 
         log.info("[batch-admin] Created dynamic job '{}' with {} step(s)", name, request.steps().size());
         return name;
+    }
+
+    /**
+     * Dry-run a composition: validates it and returns the ordered, fully expanded list of steps the
+     * job <i>would</i> run — {@code job:<name>} whole-job blocks expanded into their constituent
+     * steps — without building, registering or persisting anything.
+     */
+    public JobPreview previewJob(CreateJobRequest request) {
+        if (request.steps().isEmpty()) {
+            throw BatchAdminException.badRequest("A job needs at least one step");
+        }
+        validateSteps(request.steps());
+        String jobName = request.jobName() == null ? "" : request.jobName().trim();
+        String prefix = jobName.isBlank() ? "" : jobName + ".";
+
+        List<JobStepPreview> resolved = new ArrayList<>();
+        for (StepDefinition definition : request.steps()) {
+            String type = definition.type() == null ? "" : definition.type().toLowerCase();
+            if (reuseExistingSteps() && existingStepCatalog.containsJob(type)) {
+                String source = definition.type().substring(ExistingStepCatalog.JOB_TYPE_PREFIX.length());
+                for (Step step : existingStepCatalog.findJobSteps(type)) {
+                    resolved.add(new JobStepPreview(step.getName(), definition.type(),
+                            "reused from job '" + source + "'"));
+                }
+            } else if (reuseExistingSteps() && existingStepCatalog.contains(type)) {
+                Step step = existingStepCatalog.find(type);
+                resolved.add(new JobStepPreview(step.getName(), definition.type(), "reused existing step"));
+            } else if (stepProviders.containsKey(type)) {
+                resolved.add(new JobStepPreview(prefix + definition.name(), definition.type(), "step provider"));
+            } else {
+                resolved.add(new JobStepPreview(prefix + definition.name(), definition.type(), "tasklet"));
+            }
+        }
+        return new JobPreview(jobName, resolved.size(), resolved);
+    }
+
+    /**
+     * Creates a new dynamic job that replicates an existing one. A dynamic source is copied
+     * definition-for-definition (an exact clone); a declared host job is cloned by reusing its whole
+     * flow ({@code job:<name>}), since its original definitions are not known to the component.
+     *
+     * @param sourceName     the job to clone (declared or dynamic)
+     * @param requestedName  name for the clone; when blank, {@code <source>-copy} is used
+     * @return the name of the created clone
+     */
+    public String cloneJob(String sourceName, String requestedName) {
+        if (!jobRegistry.getJobNames().contains(sourceName)) {
+            throw BatchAdminException.notFound("No job named '" + sourceName + "'");
+        }
+        String newName = (requestedName == null || requestedName.isBlank())
+                ? sourceName + "-copy" : requestedName.trim();
+
+        List<StepDefinition> steps;
+        Optional<JobDefinitionRecord> definition = definitionDao.findByJobName(sourceName);
+        if (definition.isPresent()) {
+            steps = readSteps(definition.get().stepsJson());
+        } else {
+            if (!reuseExistingSteps()) {
+                throw BatchAdminException.badRequest("Cloning the declared job '" + sourceName
+                        + "' requires reuse of existing steps to be enabled");
+            }
+            if (!existingStepCatalog.containsJob(ExistingStepCatalog.JOB_TYPE_PREFIX + sourceName)) {
+                throw BatchAdminException.badRequest("Job '" + sourceName
+                        + "' does not expose its steps and cannot be cloned");
+            }
+            steps = List.of(new StepDefinition(sourceName,
+                    ExistingStepCatalog.JOB_TYPE_PREFIX + sourceName, Map.of()));
+        }
+        return createJob(new CreateJobRequest(newName, "Clone of '" + sourceName + "'", steps));
     }
 
     public void deleteJob(String jobName) {

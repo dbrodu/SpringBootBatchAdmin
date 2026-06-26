@@ -2,8 +2,10 @@ package io.batchadmin.web;
 
 import io.batchadmin.service.DynamicJobService;
 import io.batchadmin.service.JobAdminService;
+import io.batchadmin.web.dto.CloneJobRequest;
 import io.batchadmin.web.dto.CreateJobRequest;
 import io.batchadmin.web.dto.ExecutionSummary;
+import io.batchadmin.web.dto.JobPreview;
 import io.batchadmin.web.dto.JobSummary;
 import io.batchadmin.web.dto.ProviderInfo;
 import io.batchadmin.web.dto.StartJobRequest;
@@ -68,6 +70,21 @@ public class JobController {
     public JobSummary createJob(@RequestBody CreateJobRequest request) {
         String name = dynamicJobService.createJob(request);
         return jobAdminService.getJob(name);
+    }
+
+    /** Dry-run a composition: returns the expanded step list without creating anything. */
+    @PostMapping("/preview")
+    public JobPreview previewJob(@RequestBody CreateJobRequest request) {
+        return dynamicJobService.previewJob(request);
+    }
+
+    /** Clones an existing job (declared or dynamic) into a new dynamic job. */
+    @PostMapping("/{jobName}/clone")
+    @ResponseStatus(HttpStatus.CREATED)
+    public JobSummary cloneJob(@PathVariable String jobName,
+                               @RequestBody(required = false) CloneJobRequest request) {
+        String created = dynamicJobService.cloneJob(jobName, request == null ? null : request.newName());
+        return jobAdminService.getJob(created);
     }
 
     @DeleteMapping("/{jobName}")

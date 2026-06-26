@@ -21,6 +21,15 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   providers, reusable steps and whole-job blocks) that appends a ready-made step line, so operators
   pick blocks instead of typing their types.
 
+**Previewing and cloning jobs**
+- **Preview a composition** before creating it — `POST <base-path>/api/jobs/preview` (and a *Preview
+  steps* button on the **Create job** screen) returns the ordered, fully expanded list of steps the
+  job would run (with `job:<name>` whole-job blocks expanded into their constituent steps), validating
+  it without building, registering or persisting anything.
+- **Clone an existing job** in one action — `POST <base-path>/api/jobs/<name>/clone` and a *Clone*
+  button on the **Jobs** screen. A dynamic job is copied definition-for-definition; a declared host job
+  is cloned by reusing its whole flow.
+
 **Reusable SQL → JSON → target building blocks**
 - `GenericSqlItemReader` / `GenericSqlItemReaderBuilder` — a configurable `ItemReader` that streams the
   rows of an arbitrary SQL query as `Map<String, Object>` (or maps to your own type) with no mapping

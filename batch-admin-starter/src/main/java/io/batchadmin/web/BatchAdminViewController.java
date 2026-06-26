@@ -9,6 +9,7 @@ import io.batchadmin.service.JobLogService;
 import io.batchadmin.service.JobSchedulingService;
 import io.batchadmin.service.ObservabilityService;
 import io.batchadmin.web.dto.CreateJobRequest;
+import io.batchadmin.web.dto.JobPreview;
 import io.batchadmin.web.dto.ScheduleInfo;
 import io.batchadmin.web.dto.ScheduleRequest;
 import io.batchadmin.web.dto.StartJobRequest;
@@ -93,11 +94,37 @@ public class BatchAdminViewController {
 
     @GetMapping("/jobs/new")
     public String newJob(Model model) {
+        return renderCreateJob(model, "", "", "", null);
+    }
+
+    /** Dry-run the composition and re-render the form with the expanded steps shown. */
+    @PostMapping("/jobs/preview")
+    public String previewJob(@RequestParam(required = false) String jobName,
+                             @RequestParam(required = false) String description,
+                             @RequestParam(required = false) String steps,
+                             Model model, RedirectAttributes redirect) {
+        try {
+            List<StepDefinition> stepDefinitions = parseSteps(steps);
+            JobPreview preview = dynamicJobService.previewJob(
+                    new CreateJobRequest(jobName, description, stepDefinitions));
+            return renderCreateJob(model, jobName, description, steps, preview);
+        } catch (BatchAdminException | IllegalArgumentException ex) {
+            flash(redirect, true, ex.getMessage());
+            return redirect(redirect, "/jobs/new");
+        }
+    }
+
+    private String renderCreateJob(Model model, String jobName, String description, String steps,
+                                   JobPreview preview) {
         model.addAttribute("active", "create");
         model.addAttribute("providers", dynamicJobService.listProviders());
         model.addAttribute("stepProviders", dynamicJobService.listStepProviders());
         model.addAttribute("reusableSteps", dynamicJobService.listReusableSteps());
         model.addAttribute("reusableJobs", dynamicJobService.listReusableJobs());
+        model.addAttribute("formJobName", jobName == null ? "" : jobName);
+        model.addAttribute("formDescription", description == null ? "" : description);
+        model.addAttribute("formSteps", steps == null ? "" : steps);
+        model.addAttribute("preview", preview);
         return "batch-admin/create-job";
     }
 
@@ -186,6 +213,19 @@ public class BatchAdminViewController {
             flash(redirect, true, ex.getMessage());
             return redirect(redirect, "/jobs/new");
         }
+    }
+
+    @PostMapping("/jobs/{jobName}/clone")
+    public String cloneJob(@PathVariable String jobName,
+                           @RequestParam(required = false) String newName,
+                           RedirectAttributes redirect) {
+        try {
+            String created = dynamicJobService.cloneJob(jobName, newName);
+            flash(redirect, false, "Cloned '" + jobName + "' into '" + created + "'.");
+        } catch (BatchAdminException | IllegalArgumentException ex) {
+            flash(redirect, true, ex.getMessage());
+        }
+        return redirect(redirect, "/jobs");
     }
 
     @PostMapping("/jobs/{jobName}/delete")
