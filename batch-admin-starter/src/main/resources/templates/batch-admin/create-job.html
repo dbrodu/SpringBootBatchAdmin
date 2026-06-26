@@ -90,9 +90,25 @@
           <td th:text="${p.displayName()}">Log a message</td>
           <td class="muted" th:text="${@batchAdminFormat.params(p.properties())}">message=...</td>
         </tr>
-        <tr th:if="${providers.isEmpty()}"><td colspan="3" class="muted">No providers available.</td></tr>
+        <tr th:each="p : ${stepProviders}">
+          <td><code th:text="${p.type()}">sql-export</code></td>
+          <td th:text="${p.displayName()}">SQL → JSON export</td>
+          <td class="muted" th:text="${@batchAdminFormat.params(p.properties())}">select=...</td>
+        </tr>
+        <tr th:each="p : ${reusableSteps}">
+          <td><code th:text="${p.type()}">invoiceJob.extract</code></td>
+          <td th:text="${p.displayName()}">Reuse step 'extract' from job 'invoiceJob'</td>
+          <td class="muted">— reuses the existing step as-is (no properties)</td>
+        </tr>
+        <tr th:if="${providers.isEmpty() and stepProviders.isEmpty() and reusableSteps.isEmpty()}">
+          <td colspan="3" class="muted">No building blocks available.</td>
+        </tr>
       </tbody>
     </table>
+    <p class="muted" th:if="${not reusableSteps.isEmpty()}" style="margin-top:.5rem">
+      Types listed as <code>job.step</code> / <code>step</code> reuse a step from one of your existing
+      jobs — drop them into a job above just like any other building block.
+    </p>
   </div>
 </main>
 <footer th:replace="~{batch-admin/fragments :: footer}"></footer>

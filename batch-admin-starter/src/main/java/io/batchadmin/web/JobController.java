@@ -46,6 +46,12 @@ public class JobController {
         return dynamicJobService.listProviders();
     }
 
+    /** Building blocks derived from the steps of the host's existing jobs (reusable as step types). */
+    @GetMapping("/reusable-steps")
+    public List<ProviderInfo> listReusableSteps() {
+        return dynamicJobService.listReusableSteps();
+    }
+
     @GetMapping("/{jobName}")
     public JobSummary getJob(@PathVariable String jobName) {
         return jobAdminService.getJob(jobName);

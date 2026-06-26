@@ -159,6 +159,12 @@ public class BatchAdminProperties {
          */
         private boolean allowCommandTasklets = false;
 
+        /**
+         * Whether the steps of the host's existing jobs are exposed as reusable building blocks, so a
+         * new on-the-fly job can drop in a step the application already defines. Enabled by default.
+         */
+        private boolean reuseExistingSteps = true;
+
         public boolean isEnabled() {
             return enabled;
         }
@@ -169,6 +175,14 @@ public class BatchAdminProperties {
 
         public boolean isAllowCommandTasklets() {
             return allowCommandTasklets;
+        }
+
+        public boolean isReuseExistingSteps() {
+            return reuseExistingSteps;
+        }
+
+        public void setReuseExistingSteps(boolean reuseExistingSteps) {
+            this.reuseExistingSteps = reuseExistingSteps;
         }
 
         public void setAllowCommandTasklets(boolean allowCommandTasklets) {
