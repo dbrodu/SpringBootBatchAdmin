@@ -59,7 +59,7 @@
     <div class="field" style="max-width:680px">
       <span>Step order</span>
       <div id="step-order" style="display:flex; flex-direction:column; gap:4px"></div>
-      <span class="hint">Drag the ⠿ handle to reorder steps without editing the text above.</span>
+      <span class="hint">Use ▲ / ▼ or drag the ⠿ handle to reorder steps without editing the text above.</span>
     </div>
 
     <div class="inline-form">
@@ -140,13 +140,24 @@
           row.style.alignItems = 'center';
           row.style.cursor = 'grab';
           row.style.padding = '2px 0';
+          var up = document.createElement('button');
+          up.type = 'button'; up.className = 'btn btn-small'; up.textContent = '▲';
+          up.title = 'Move up'; up.disabled = (i === 0);
+          up.addEventListener('click', function () { moveLine(i, i - 1); });
+          var down = document.createElement('button');
+          down.type = 'button'; down.className = 'btn btn-small'; down.textContent = '▼';
+          down.title = 'Move down'; down.disabled = (i === lines.length - 1);
+          down.addEventListener('click', function () { moveLine(i, i + 2); });
           var handle = document.createElement('span');
           handle.textContent = '⠿';
+          handle.title = 'Drag to reorder';
           handle.setAttribute('aria-hidden', 'true');
           handle.style.cursor = 'grab';
           handle.style.opacity = '0.6';
           var label = document.createElement('code');
           label.textContent = line.trim();
+          row.appendChild(up);
+          row.appendChild(down);
           row.appendChild(handle);
           row.appendChild(label);
 

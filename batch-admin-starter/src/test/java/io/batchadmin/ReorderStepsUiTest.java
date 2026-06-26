@@ -10,8 +10,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 /**
- * The Create job page renders the drag-and-drop step-order widget. The reorder itself is client-side;
- * this guards that the markup/script render (i.e. the template parses) and the controls are present.
+ * The Create job page renders the step-order widget (▲/▼ buttons + drag-and-drop). The reorder itself
+ * is client-side; this guards that the markup/script render (i.e. the template parses).
  */
 @SpringBootTest(classes = TestBatchApplication.class,
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -24,9 +24,9 @@ class ReorderStepsUiTest {
     void createJobPageRendersTheStepOrderControls() {
         ResponseEntity<String> page = rest.getForEntity("/batch-admin/jobs/new", String.class);
         assertThat(page.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(page.getBody()).contains("id=\"step-order\"");            // the reorder list container
-        assertThat(page.getBody()).contains("Drag the ⠿ handle to reorder"); // the hint
-        assertThat(page.getBody()).contains("dragstart");                    // the drag-and-drop wiring
-        assertThat(page.getBody()).contains("renderOrder");                  // the reorder script
+        assertThat(page.getBody()).contains("id=\"step-order\"");                // the reorder list container
+        assertThat(page.getBody()).contains("Use ▲ / ▼ or drag the ⠿ handle");   // the hint (buttons + drag)
+        assertThat(page.getBody()).contains("dragstart");                        // the drag-and-drop wiring
+        assertThat(page.getBody()).contains("renderOrder");                      // the reorder script
     }
 }
