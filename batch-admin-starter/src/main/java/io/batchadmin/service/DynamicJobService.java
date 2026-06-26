@@ -6,12 +6,14 @@ import io.batchadmin.autoconfigure.BatchAdminProperties;
 import io.batchadmin.domain.JobDefinitionDao;
 import io.batchadmin.domain.JobDefinitionRecord;
 import io.batchadmin.dynamic.StepDefinition;
+import io.batchadmin.dynamic.StepProvider;
 import io.batchadmin.dynamic.TaskletProvider;
 import io.batchadmin.web.dto.CreateJobRequest;
 import io.batchadmin.web.dto.ProviderInfo;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.batch.core.Job;
@@ -44,6 +46,7 @@ public class DynamicJobService {
     private final PlatformTransactionManager transactionManager;
     private final JobDefinitionDao definitionDao;
     private final Map<String, TaskletProvider> providers;
+    private final Map<String, StepProvider> stepProviders;
     private final ObjectMapper objectMapper;
     private final BatchAdminProperties properties;
     private final JobExecutionListener jobLogListener;
@@ -53,6 +56,7 @@ public class DynamicJobService {
                              PlatformTransactionManager transactionManager,
                              JobDefinitionDao definitionDao,
                              List<TaskletProvider> providers,
+                             List<StepProvider> stepProviders,
                              ObjectMapper objectMapper,
                              BatchAdminProperties properties,
                              JobExecutionListener jobLogListener) {
@@ -68,10 +72,22 @@ public class DynamicJobService {
             byType.put(provider.getType().toLowerCase(), provider);
         }
         this.providers = byType;
+        Map<String, StepProvider> stepByType = new LinkedHashMap<>();
+        for (StepProvider provider : stepProviders) {
+            stepByType.put(provider.getType().toLowerCase(), provider);
+        }
+        this.stepProviders = stepByType;
     }
 
     public List<ProviderInfo> listProviders() {
         return providers.values().stream()
+                .map(p -> new ProviderInfo(p.getType(), p.getDisplayName(), p.describeProperties()))
+                .toList();
+    }
+
+    /** Step providers (chunk-oriented building blocks such as {@code sql-export}). */
+    public List<ProviderInfo> listStepProviders() {
+        return stepProviders.values().stream()
                 .map(p -> new ProviderInfo(p.getType(), p.getDisplayName(), p.describeProperties()))
                 .toList();
     }
@@ -136,9 +152,12 @@ public class DynamicJobService {
             if (step.name() == null || step.name().isBlank()) {
                 throw BatchAdminException.badRequest("Every step needs a name");
             }
-            if (!providers.containsKey(step.type() == null ? "" : step.type().toLowerCase())) {
+            String type = step.type() == null ? "" : step.type().toLowerCase();
+            if (!providers.containsKey(type) && !stepProviders.containsKey(type)) {
+                Set<String> available = new java.util.TreeSet<>(providers.keySet());
+                available.addAll(stepProviders.keySet());
                 throw BatchAdminException.badRequest("Unknown step type '" + step.type()
-                        + "'. Available types: " + providers.keySet());
+                        + "'. Available types: " + available);
             }
         }
     }
@@ -157,9 +176,22 @@ public class DynamicJobService {
     }
 
     private Step buildStep(String jobName, StepDefinition definition) {
-        TaskletProvider provider = providers.get(definition.type().toLowerCase());
+        String stepName = jobName + "." + definition.name();
+        String type = definition.type().toLowerCase();
+
+        StepProvider stepProvider = stepProviders.get(type);
+        if (stepProvider != null) {
+            try {
+                return stepProvider.buildStep(stepName, definition.properties(),
+                        new StepProvider.Context(jobRepository, transactionManager));
+            } catch (IllegalArgumentException ex) {
+                throw BatchAdminException.badRequest(ex.getMessage());
+            }
+        }
+
+        TaskletProvider provider = providers.get(type);
         Tasklet tasklet = provider.create(definition.properties());
-        return new StepBuilder(jobName + "." + definition.name(), jobRepository)
+        return new StepBuilder(stepName, jobRepository)
                 .tasklet(tasklet, transactionManager)
                 .build();
     }

@@ -91,6 +91,22 @@ notify  = log (message=done)
 
 Dynamically created jobs are **persisted** and re-registered on every restart.
 
+Beyond tasklet building blocks, richer **chunk-oriented step types** can be contributed (the
+`StepProvider` SPI). One ships out of the box: **`sql-export`** — a paged SQL query → JSON → target
+(OpenSearch via its `_bulk` API, or the log for a dry run). The **Create job** screen has a dedicated
+form for it, so operators can build a *SQL → OpenSearch export* job with no code; it is equally
+available through the API:
+
+```bash
+curl -X POST http://localhost:8080/batch-admin/api/jobs -H 'Content-Type: application/json' -d '{
+  "jobName":"ordersToOpenSearch",
+  "steps":[{"name":"export","type":"sql-export","properties":{
+    "select":"id, customer, amount", "from":"orders", "where":"status = '\''NEW'\''",
+    "sort":"id", "pageSize":"500",
+    "target":"opensearch", "baseUrl":"https://opensearch:9200", "index":"orders", "idField":"id"
+  }}]}'
+```
+
 ### 3. Schedule jobs
 Any launchable job can be given a **schedule**. Schedules are persisted and re-armed on startup.
 The frequency is entered in **plain language** (French or English) and converted to a Spring cron
