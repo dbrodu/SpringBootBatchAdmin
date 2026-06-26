@@ -170,6 +170,47 @@ MetadataService metadataService(MyRegistry registry) {
 Evaluation uses a **sandboxed** SpEL context (property reads + instance method calls only — no type
 references or constructors) and can be disabled with `batch.admin.expressions.enabled=false`.
 
+### 7. Secure with OAuth2 / OIDC (optional)
+By default the component adds **no** security — it assumes the host application protects
+`/batch-admin/**` itself. Set `batch.admin.security.enabled=true` to have it install two filter
+chains **scoped to its own paths** (it never takes over the rest of your app):
+
+- the **REST API** (`/batch-admin/api/**`) becomes a stateless **OAuth2 resource server** validating
+  bearer **JWT**s — configured with the standard
+  `spring.security.oauth2.resourceserver.jwt.*` properties;
+- the **GUI** (`/batch-admin/**`) uses interactive **OIDC login** — configured with the standard
+  `spring.security.oauth2.client.registration.*` / `provider.*` properties.
+
+The two chains are independent, so an API-only or a GUI-only deployment works without the other.
+Optionally require a specific authority/scope per surface with `batch.admin.security.api-authority`
+and `batch.admin.security.ui-authority`. The security stack is an **optional** dependency: it is only
+pulled in when you add Spring Security (e.g. `spring-boot-starter-oauth2-client` /
+`spring-boot-starter-oauth2-resource-server`) to your application.
+
+```yaml
+batch:
+  admin:
+    security:
+      enabled: true
+      api-authority: SCOPE_batch.admin      # optional; any authenticated token otherwise
+      ui-authority: ROLE_BATCH_ADMIN        # optional; any authenticated OIDC user otherwise
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://idp.example.com/realms/batch
+      client:
+        registration:
+          batch-admin:
+            client-id: batch-admin
+            client-secret: ${OIDC_CLIENT_SECRET}
+            scope: openid, profile
+        provider:
+          batch-admin:
+            issuer-uri: https://idp.example.com/realms/batch
+```
+
 ---
 
 ## Reusable building blocks
@@ -313,6 +354,10 @@ batch:
       enabled: true                # resolve SpEL in parameters / step properties
     metadata:                      # static metadata exposed to expressions (default MetadataService)
       region: EU
+    security:
+      enabled: false               # opt-in OAuth2/OIDC for the API and GUI (see section 7)
+      api-authority:               # optional authority/scope required to call the REST API
+      ui-authority:                # optional authority required to use the GUI
 ```
 
 ---
