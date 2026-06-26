@@ -21,6 +21,11 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   providers, reusable steps and whole-job blocks) that appends a ready-made step line, so operators
   pick blocks instead of typing their types.
 
+**GUI**
+- The **Jobs** screen gains a **Schedule** column showing each job's next run (or *paused* + cron when
+  disabled), linking to the Schedules screen — so the schedule is visible at a glance without leaving
+  the page.
+
 **Previewing and cloning jobs**
 - **Preview a composition** before creating it — `POST <base-path>/api/jobs/preview` (and a *Preview
   steps* button on the **Create job** screen) returns the ordered, fully expanded list of steps the
