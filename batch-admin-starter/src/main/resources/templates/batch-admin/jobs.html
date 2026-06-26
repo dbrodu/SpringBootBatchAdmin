@@ -64,6 +64,22 @@
       <tr th:if="${jobs.isEmpty()}"><td colspan="7" class="muted">No jobs found.</td></tr>
     </tbody>
   </table>
+
+  <details class="panel" style="margin-top:16px">
+    <summary><strong>Import / export job definitions</strong></summary>
+    <p class="muted">Move dynamic jobs between environments. Export downloads every dynamic job as JSON;
+      paste a previously exported document below to recreate them here.</p>
+    <a class="btn" th:href="@{|${basePath}/jobs/export|}" download="batch-admin-jobs.json">⬇ Export all (JSON)</a>
+    <form th:action="@{|${basePath}/jobs/import|}" method="post" style="margin-top:12px">
+      <label class="field" style="max-width:680px">
+        <span>Paste exported JSON</span>
+        <textarea name="json" placeholder='[ { "jobName": "ordersExport", "steps": [ { "name": "export", "type": "log", "properties": { "message": "hi" } } ] } ]'></textarea>
+      </label>
+      <label class="check"><input type="checkbox" name="overwrite" value="true"/>
+        Overwrite dynamic jobs that already exist</label>
+      <button type="submit" class="btn btn-primary">⬆ Import</button>
+    </form>
+  </details>
 </main>
 <footer th:replace="~{batch-admin/fragments :: footer}"></footer>
 </body>

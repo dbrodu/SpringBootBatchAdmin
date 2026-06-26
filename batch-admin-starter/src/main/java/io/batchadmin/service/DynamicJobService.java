@@ -11,6 +11,7 @@ import io.batchadmin.dynamic.StepProvider;
 import io.batchadmin.dynamic.TaskletProvider;
 import io.batchadmin.metadata.ValueResolver;
 import io.batchadmin.web.dto.CreateJobRequest;
+import io.batchadmin.web.dto.ImportResult;
 import io.batchadmin.web.dto.JobPreview;
 import io.batchadmin.web.dto.JobStepPreview;
 import io.batchadmin.web.dto.ProviderInfo;
@@ -271,6 +272,95 @@ public class DynamicJobService {
         jobRegistry.unregister(jobName);
         definitionDao.deleteByJobName(jobName);
         log.info("[batch-admin] Deleted dynamic job '{}'", jobName);
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Export / import (portable JSON definitions, to move jobs between environments)
+    // ----------------------------------------------------------------------------------------
+
+    /** Every dynamic job's portable definition (name, description, steps), in id order. */
+    public List<CreateJobRequest> exportAll() {
+        return definitionDao.findAll().stream()
+                .map(record -> new CreateJobRequest(record.jobName(), record.description(),
+                        readSteps(record.stepsJson())))
+                .toList();
+    }
+
+    /** One dynamic job's portable definition. */
+    public CreateJobRequest exportJob(String jobName) {
+        JobDefinitionRecord record = definitionDao.findByJobName(jobName).orElseThrow(() ->
+                BatchAdminException.notFound("No dynamic job named '" + jobName + "'"));
+        return new CreateJobRequest(record.jobName(), record.description(), readSteps(record.stepsJson()));
+    }
+
+    /** All dynamic jobs serialized as a pretty-printed JSON array (for download). */
+    public String exportAllJson() {
+        try {
+            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(exportAll());
+        } catch (Exception ex) {
+            throw new BatchAdminException(BatchAdminException.Kind.INTERNAL, "Cannot serialize jobs", ex);
+        }
+    }
+
+    /**
+     * Imports job definitions previously exported (e.g. from another environment). Each definition is
+     * created; one whose name already exists as a dynamic job is overwritten when {@code overwrite} is
+     * set, otherwise skipped. A name colliding with a declared host job, or any definition that fails
+     * to build, is reported as failed; the rest still import.
+     */
+    public ImportResult importJobs(List<CreateJobRequest> definitions, boolean overwrite) {
+        if (!properties.getDynamicJobs().isEnabled()) {
+            throw BatchAdminException.badRequest("Dynamic job creation is disabled");
+        }
+        List<String> created = new ArrayList<>();
+        List<String> updated = new ArrayList<>();
+        List<String> skipped = new ArrayList<>();
+        Map<String, String> failed = new LinkedHashMap<>();
+        for (CreateJobRequest definition : definitions) {
+            String name = definition.jobName() == null ? "" : definition.jobName().trim();
+            try {
+                if (name.isBlank()) {
+                    throw BatchAdminException.badRequest("'jobName' is required");
+                }
+                boolean existsDynamic = definitionDao.findByJobName(name).isPresent();
+                if (existsDynamic) {
+                    if (overwrite) {
+                        // Validate the replacement builds before removing the existing job.
+                        validateSteps(definition.steps());
+                        buildJob(name, definition.steps());
+                        deleteJob(name);
+                        createJob(definition);
+                        updated.add(name);
+                    } else {
+                        skipped.add(name);
+                    }
+                } else if (jobRegistry.getJobNames().contains(name)) {
+                    failed.put(name, "a declared (non-dynamic) job with this name already exists");
+                } else {
+                    created.add(createJob(definition));
+                }
+            } catch (RuntimeException ex) {
+                failed.put(name.isBlank() ? "(unnamed)" : name, ex.getMessage());
+            }
+        }
+        log.info("[batch-admin] Imported job definitions: {} created, {} updated, {} skipped, {} failed",
+                created.size(), updated.size(), skipped.size(), failed.size());
+        return new ImportResult(created, updated, skipped, failed);
+    }
+
+    /** Parses an exported JSON array and {@link #importJobs(List, boolean) imports} it. */
+    public ImportResult importJobsFromJson(String json, boolean overwrite) {
+        if (json == null || json.isBlank()) {
+            throw BatchAdminException.badRequest("No JSON to import");
+        }
+        List<CreateJobRequest> definitions;
+        try {
+            definitions = objectMapper.readValue(json, new TypeReference<List<CreateJobRequest>>() {
+            });
+        } catch (Exception ex) {
+            throw BatchAdminException.badRequest("Invalid job-definitions JSON: " + ex.getMessage());
+        }
+        return importJobs(definitions, overwrite);
     }
 
     /** Re-registers every persisted dynamic job. Invoked once the application is ready. */

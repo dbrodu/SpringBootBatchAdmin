@@ -38,6 +38,11 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   **Jobs** screen that reopens the composer pre-filled with the job's steps. The new composition is
   built and validated before the old job is swapped out, so a bad edit never drops the running
   definition. (Declared host jobs cannot be edited.)
+- **Export / import job definitions as JSON** to move dynamic jobs between environments —
+  `GET <base-path>/api/jobs/export` (all) / `…/<name>/export` (one), and
+  `POST <base-path>/api/jobs/import?overwrite=` (existing jobs are skipped, or overwritten when
+  `overwrite=true`; names colliding with a declared job are reported as failed). The **Jobs** screen
+  gains an *Import / export* panel (download + paste-to-import).
 
 **Reusable SQL → JSON → target building blocks**
 - `GenericSqlItemReader` / `GenericSqlItemReaderBuilder` — a configurable `ItemReader` that streams the
