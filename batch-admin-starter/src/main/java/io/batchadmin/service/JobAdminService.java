@@ -2,6 +2,7 @@ package io.batchadmin.service;
 
 import io.batchadmin.autoconfigure.BatchAdminProperties;
 import io.batchadmin.domain.JobDefinitionDao;
+import io.batchadmin.metadata.ValueResolver;
 import io.batchadmin.web.dto.ExecutionSummary;
 import io.batchadmin.web.dto.JobSummary;
 import io.batchadmin.web.dto.StartJobRequest;
@@ -43,6 +44,7 @@ public class JobAdminService {
     private final JobOperator jobOperator;
     private final JobLauncher jobLauncher;
     private final JobDefinitionDao jobDefinitionDao;
+    private final ValueResolver valueResolver;
     private final BatchAdminProperties properties;
 
     public JobAdminService(JobRegistry jobRegistry,
@@ -50,12 +52,14 @@ public class JobAdminService {
                            JobOperator jobOperator,
                            JobLauncher jobLauncher,
                            JobDefinitionDao jobDefinitionDao,
+                           ValueResolver valueResolver,
                            BatchAdminProperties properties) {
         this.jobRegistry = jobRegistry;
         this.jobExplorer = jobExplorer;
         this.jobOperator = jobOperator;
         this.jobLauncher = jobLauncher;
         this.jobDefinitionDao = jobDefinitionDao;
+        this.valueResolver = valueResolver;
         this.properties = properties;
     }
 
@@ -203,6 +207,8 @@ public class JobAdminService {
     private JobParameters buildParameters(StartJobRequest request) {
         JobParametersBuilder builder = new JobParametersBuilder();
         Map<String, String> params = request != null ? request.parameters() : Map.of();
+        // Resolve any SpEL / metadata expression (e.g. #{metadata.get('region')}, #{today}).
+        params = valueResolver.resolveAll(params);
         for (Map.Entry<String, String> entry : params.entrySet()) {
             builder.addString(entry.getKey(), entry.getValue(), true);
         }

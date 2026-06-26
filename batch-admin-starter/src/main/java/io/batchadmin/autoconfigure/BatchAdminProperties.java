@@ -36,6 +36,16 @@ public class BatchAdminProperties {
     /** Per-execution log capture sub-configuration. */
     private final Logs logs = new Logs();
 
+    /** SpEL expression resolution sub-configuration. */
+    private final Expressions expressions = new Expressions();
+
+    /**
+     * Static metadata exposed to expressions as {@code #{metadata.get('key')}} via the default
+     * {@link io.batchadmin.metadata.PropertiesMetadataService}. Replace that bean to plug a real
+     * metadata source.
+     */
+    private final java.util.Map<String, String> metadata = new java.util.LinkedHashMap<>();
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -74,6 +84,14 @@ public class BatchAdminProperties {
 
     public Logs getLogs() {
         return logs;
+    }
+
+    public Expressions getExpressions() {
+        return expressions;
+    }
+
+    public java.util.Map<String, String> getMetadata() {
+        return metadata;
     }
 
     /** The API path is always the base path suffixed with {@code /api}. */
@@ -164,6 +182,19 @@ public class BatchAdminProperties {
 
         public void setMetricsEnabled(boolean metricsEnabled) {
             this.metricsEnabled = metricsEnabled;
+        }
+    }
+
+    public static class Expressions {
+        /** Whether SpEL expression resolution of parameters and step properties is enabled. */
+        private boolean enabled = true;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
         }
     }
 
