@@ -59,7 +59,7 @@
     <div class="field" style="max-width:680px">
       <span>Step order</span>
       <div id="step-order" style="display:flex; flex-direction:column; gap:4px"></div>
-      <span class="hint">Use ▲ / ▼ to reorder steps without editing the text above.</span>
+      <span class="hint">Drag the ⠿ handle to reorder steps without editing the text above.</span>
     </div>
 
     <div class="inline-form">
@@ -98,14 +98,29 @@
       function setLines(lines) {
         steps.value = lines.length ? lines.join('\n') + '\n' : '';
       }
-      function move(from, to) {
+      function moveLine(from, insertAt) {
         var lines = getLines();
-        if (to === -1 || to === lines.length) { return; }
+        if (from === insertAt) { return; }
         var moved = lines.splice(from, 1)[0];
-        lines.splice(to, 0, moved);
+        if (insertAt > from) { insertAt = insertAt - 1; }
+        lines.splice(insertAt, 0, moved);
         setLines(lines);
         renderOrder();
       }
+
+      var dragFrom = null;
+      function clearMarkers() {
+        var rows = order.children;
+        for (var k = 0; k < rows.length; k = k + 1) {
+          rows[k].style.borderTop = '';
+          rows[k].style.borderBottom = '';
+        }
+      }
+      function dropsAfter(row, clientY) {
+        var rect = row.getBoundingClientRect();
+        return (clientY - rect.top) >= (rect.height / 2);
+      }
+
       function renderOrder() {
         if (!order) { return; }
         order.textContent = '';
@@ -119,22 +134,54 @@
         }
         lines.forEach(function (line, i) {
           var row = document.createElement('div');
+          row.draggable = true;
           row.style.display = 'flex';
           row.style.gap = '6px';
           row.style.alignItems = 'center';
-          var up = document.createElement('button');
-          up.type = 'button'; up.className = 'btn btn-small'; up.textContent = '▲';
-          up.disabled = (i === 0);
-          up.addEventListener('click', function () { move(i, i - 1); });
-          var down = document.createElement('button');
-          down.type = 'button'; down.className = 'btn btn-small'; down.textContent = '▼';
-          down.disabled = (i === lines.length - 1);
-          down.addEventListener('click', function () { move(i, i + 1); });
+          row.style.cursor = 'grab';
+          row.style.padding = '2px 0';
+          var handle = document.createElement('span');
+          handle.textContent = '⠿';
+          handle.setAttribute('aria-hidden', 'true');
+          handle.style.cursor = 'grab';
+          handle.style.opacity = '0.6';
           var label = document.createElement('code');
           label.textContent = line.trim();
-          row.appendChild(up);
-          row.appendChild(down);
+          row.appendChild(handle);
           row.appendChild(label);
+
+          row.addEventListener('dragstart', function (e) {
+            dragFrom = i;
+            row.style.opacity = '0.4';
+            if (e.dataTransfer) {
+              e.dataTransfer.effectAllowed = 'move';
+              try { e.dataTransfer.setData('text/plain', String(i)); } catch (ignored) { }
+            }
+          });
+          row.addEventListener('dragover', function (e) {
+            e.preventDefault();
+            if (e.dataTransfer) { e.dataTransfer.dropEffect = 'move'; }
+            clearMarkers();
+            if (dropsAfter(row, e.clientY)) {
+              row.style.borderBottom = '2px solid currentColor';
+            } else {
+              row.style.borderTop = '2px solid currentColor';
+            }
+          });
+          row.addEventListener('dragleave', function () { clearMarkers(); });
+          row.addEventListener('drop', function (e) {
+            e.preventDefault();
+            clearMarkers();
+            if (dragFrom === null) { return; }
+            var insertAt = dropsAfter(row, e.clientY) ? (i + 1) : i;
+            moveLine(dragFrom, insertAt);
+            dragFrom = null;
+          });
+          row.addEventListener('dragend', function () {
+            dragFrom = null;
+            row.style.opacity = '';
+            clearMarkers();
+          });
           order.appendChild(row);
         });
       }
