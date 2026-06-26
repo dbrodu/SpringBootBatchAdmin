@@ -5,6 +5,7 @@ import io.batchadmin.service.JobAdminService;
 import io.batchadmin.web.dto.CloneJobRequest;
 import io.batchadmin.web.dto.CreateJobRequest;
 import io.batchadmin.web.dto.ExecutionSummary;
+import io.batchadmin.web.dto.ImportResult;
 import io.batchadmin.web.dto.JobPreview;
 import io.batchadmin.web.dto.JobSummary;
 import io.batchadmin.web.dto.ProviderInfo;
@@ -61,9 +62,28 @@ public class JobController {
         return dynamicJobService.listReusableJobs();
     }
 
+    /** Portable JSON of every dynamic job's definition (to move jobs between environments). */
+    @GetMapping("/export")
+    public List<CreateJobRequest> exportJobs() {
+        return dynamicJobService.exportAll();
+    }
+
+    /** Creates/overwrites dynamic jobs from a previously exported JSON array. */
+    @PostMapping("/import")
+    public ImportResult importJobs(@RequestBody List<CreateJobRequest> definitions,
+                                   @RequestParam(defaultValue = "false") boolean overwrite) {
+        return dynamicJobService.importJobs(definitions, overwrite);
+    }
+
     @GetMapping("/{jobName}")
     public JobSummary getJob(@PathVariable String jobName) {
         return jobAdminService.getJob(jobName);
+    }
+
+    /** Portable JSON of one dynamic job's definition. */
+    @GetMapping("/{jobName}/export")
+    public CreateJobRequest exportJob(@PathVariable String jobName) {
+        return dynamicJobService.exportJob(jobName);
     }
 
     @PostMapping

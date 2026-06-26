@@ -100,7 +100,9 @@ defines, with no code. The **Create job** screen has a picker to insert them. Di
 You can **preview** a composition before creating it (the *Preview steps* button, or
 `POST .../api/jobs/preview`) to see the exact ordered steps it expands to, **clone** any existing job
 into a new dynamic one in a click (the *Clone* button, or `POST .../api/jobs/<name>/clone`), and
-**edit** a dynamic job's steps in place (the *Edit* action, or `PUT .../api/jobs/<name>`).
+**edit** a dynamic job's steps in place (the *Edit* action, or `PUT .../api/jobs/<name>`). Dynamic jobs
+can also be **exported/imported as JSON** to move them between environments (the *Import / export*
+panel, or `GET/POST .../api/jobs/export` and `…/import`).
 
 > **Adding your own building block?** See the **[Building blocks guide](docs/BUILDING_BLOCKS.md)** — a
 > step-by-step walkthrough of the `TaskletProvider` and `StepProvider` SPIs, deriving blocks from

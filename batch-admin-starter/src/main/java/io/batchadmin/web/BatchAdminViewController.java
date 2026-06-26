@@ -9,6 +9,7 @@ import io.batchadmin.service.JobLogService;
 import io.batchadmin.service.JobSchedulingService;
 import io.batchadmin.service.ObservabilityService;
 import io.batchadmin.web.dto.CreateJobRequest;
+import io.batchadmin.web.dto.ImportResult;
 import io.batchadmin.web.dto.JobPreview;
 import io.batchadmin.web.dto.ScheduleInfo;
 import io.batchadmin.web.dto.ScheduleRequest;
@@ -19,7 +20,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -308,6 +313,38 @@ public class BatchAdminViewController {
         try {
             dynamicJobService.deleteJob(jobName);
             flash(redirect, false, "Deleted job '" + jobName + "'.");
+        } catch (BatchAdminException ex) {
+            flash(redirect, true, ex.getMessage());
+        }
+        return redirect(redirect, "/jobs");
+    }
+
+    /** Downloads every dynamic job's definition as a JSON document. */
+    @GetMapping("/jobs/export")
+    public ResponseEntity<String> exportJobs() {
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"batch-admin-jobs.json\"")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(dynamicJobService.exportAllJson());
+    }
+
+    @PostMapping("/jobs/import")
+    public String importJobs(@RequestParam(required = false) String json,
+                             @RequestParam(defaultValue = "false") boolean overwrite,
+                             RedirectAttributes redirect) {
+        try {
+            ImportResult result = dynamicJobService.importJobsFromJson(json, overwrite);
+            StringBuilder message = new StringBuilder("Import: ")
+                    .append(result.created().size()).append(" created, ")
+                    .append(result.updated().size()).append(" updated, ")
+                    .append(result.skipped().size()).append(" skipped");
+            if (!result.failed().isEmpty()) {
+                message.append(", ").append(result.failed().size()).append(" failed — ")
+                        .append(result.failed().entrySet().stream()
+                                .map(entry -> entry.getKey() + ": " + entry.getValue())
+                                .collect(Collectors.joining("; ")));
+            }
+            flash(redirect, !result.failed().isEmpty(), message.toString());
         } catch (BatchAdminException ex) {
             flash(redirect, true, ex.getMessage());
         }
