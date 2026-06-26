@@ -12,8 +12,7 @@ dedicated route, everything you need to operate your jobs:
 It is meant as a lightweight, embedded replacement for **Spring Cloud Data Flow** inside a single
 Spring Boot Batch application.
 
-> This branch uses **Thymeleaf** for the GUI (everything embedded in one Spring Boot JAR). An
-> alternative Angular-based GUI lives on the `main` branch.
+See the **[CHANGELOG](CHANGELOG.md)** for the full list of features.
 
 ---
 
@@ -53,6 +52,10 @@ Web are on the classpath. It discovers your existing `Job` beans, registers them
 launchable, serves its Thymeleaf GUI, and never touches your application's own JPA/transaction
 configuration (its own state is persisted through plain JDBC in two `BATCH_ADMIN_*` tables created
 automatically). The GUI pulls in `spring-boot-starter-thymeleaf` transitively.
+
+> **Migrating existing jobs?** See the **[Migration guide](docs/MIGRATION.md)** — a step-by-step
+> walkthrough for onboarding your current Spring Batch jobs (discovery, launching, parameters,
+> stop/restart, security, logs and scheduling), with a checklist and troubleshooting table.
 
 ---
 
@@ -113,6 +116,21 @@ read/write/commit/skip counters. Job timing is additionally published to **Micro
 (`spring.batch.job` timers, plus `batch.admin.executions.running` and `batch.admin.schedules.active`
 gauges), available through Spring Boot Actuator.
 
+### 5. Read execution logs
+Every log line emitted while a job runs is captured and attributed to that execution (via an MDC key
+set by a job listener and a Logback appender), then exposed per execution. The **execution detail**
+screen shows the captured logs with a **configurable minimum level** selector, and the API returns
+them filtered by level:
+
+```
+GET /batch-admin/api/executions/{id}/logs?level=WARN&limit=1000
+```
+
+Capture is bounded in memory (most recent records per execution, oldest executions evicted) so it
+never grows unbounded. The capture threshold, default read level and buffer sizes are configurable
+(see below). Logs below the application's effective logger level are never emitted, so to capture
+`DEBUG` you must also lower the relevant logger level. Requires Logback (the Spring Boot default).
+
 ---
 
 ## GUI routes
@@ -124,7 +142,7 @@ The browser GUI is served under `${batch.admin.base-path}` (default `/batch-admi
 | `/batch-admin` | Dashboard |
 | `/batch-admin/jobs` | Jobs list, start & delete |
 | `/batch-admin/jobs/new` | Create a job on the fly |
-| `/batch-admin/executions` | Executions & step detail |
+| `/batch-admin/executions` | Executions, step detail & captured logs |
 | `/batch-admin/schedules` | Cron schedules |
 
 All actions are plain HTML form POSTs that redirect back (Post/Redirect/Get) — no client-side
@@ -145,6 +163,7 @@ The same capabilities are available as a JSON API under `${batch.admin.base-path
 | `POST /jobs/{name}/executions` | Start a job (async) |
 | `GET /jobs/{name}/executions` | Execution history of a job |
 | `GET /executions?limit=` · `GET /executions/{id}` | Recent / detail with steps |
+| `GET /executions/{id}/logs?level=&limit=` · `GET /log-levels` | Captured execution logs / level list |
 | `POST /executions/{id}/stop` · `/restart` · `/abandon` | Control an execution |
 | `GET /schedules` · `POST /schedules` · `PUT /schedules/{id}/enabled?value=` · `DELETE /schedules/{id}` | Manage schedules |
 | `GET /observability/summary` | Dashboard snapshot |
@@ -170,7 +189,50 @@ batch:
     observability:
       recent-executions-limit: 100
       metrics-enabled: true
+    logs:
+      enabled: true
+      capture-level: INFO          # minimum level captured per execution
+      default-read-level: INFO     # default minimum level when reading logs
+      max-records-per-execution: 2000
+      max-executions: 200          # executions kept in the in-memory log buffer
 ```
+
+---
+
+## Screenshots
+
+The server-rendered GUI (captured with `scripts/take-screenshots.sh`):
+
+| | |
+| --- | --- |
+| **Dashboard** | **Jobs** |
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Jobs](docs/screenshots/jobs.png) |
+| **Create job** | **Executions** |
+| ![Create job](docs/screenshots/create-job.png) | ![Executions](docs/screenshots/executions.png) |
+| **Execution detail & logs** | **Schedules** |
+| ![Execution logs](docs/screenshots/execution-logs.png) | ![Schedules](docs/screenshots/schedules.png) |
+
+Regenerate them at any time (builds the app, starts it, smoke-tests every page, seeds demo data,
+captures all screens with headless Chromium, then stops the app):
+
+```bash
+scripts/take-screenshots.sh
+```
+
+---
+
+## Development in Claude Code on the web
+
+A `SessionStart` hook (`.claude/hooks/session-start.sh`, registered in `.claude/settings.json`)
+prepares remote web sessions so tests and screenshots work immediately. It:
+
+1. warms the Maven dependency cache and builds the modules (`mvn -DskipTests install`), so
+   `mvn test` runs fast and offline;
+2. installs Playwright and reuses the environment's pre-installed Chromium (falling back to a
+   download only if needed) for `scripts/take-screenshots.sh`.
+
+The hook runs **synchronously** (the session starts once setup is complete) and only in the remote
+environment. Once it is on your default branch, every future web session uses it.
 
 ---
 

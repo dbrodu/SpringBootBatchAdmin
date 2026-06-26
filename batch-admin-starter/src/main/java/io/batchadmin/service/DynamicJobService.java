@@ -15,6 +15,7 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.batch.core.Job;
+import org.springframework.batch.core.JobExecutionListener;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.DuplicateJobException;
 import org.springframework.batch.core.configuration.JobRegistry;
@@ -45,6 +46,7 @@ public class DynamicJobService {
     private final Map<String, TaskletProvider> providers;
     private final ObjectMapper objectMapper;
     private final BatchAdminProperties properties;
+    private final JobExecutionListener jobLogListener;
 
     public DynamicJobService(JobRegistry jobRegistry,
                              JobRepository jobRepository,
@@ -52,13 +54,15 @@ public class DynamicJobService {
                              JobDefinitionDao definitionDao,
                              List<TaskletProvider> providers,
                              ObjectMapper objectMapper,
-                             BatchAdminProperties properties) {
+                             BatchAdminProperties properties,
+                             JobExecutionListener jobLogListener) {
         this.jobRegistry = jobRegistry;
         this.jobRepository = jobRepository;
         this.transactionManager = transactionManager;
         this.definitionDao = definitionDao;
         this.objectMapper = objectMapper;
         this.properties = properties;
+        this.jobLogListener = jobLogListener;
         Map<String, TaskletProvider> byType = new LinkedHashMap<>();
         for (TaskletProvider provider : providers) {
             byType.put(provider.getType().toLowerCase(), provider);
@@ -141,6 +145,9 @@ public class DynamicJobService {
 
     private Job buildJob(String name, List<StepDefinition> steps) {
         JobBuilder jobBuilder = new JobBuilder(name, jobRepository).incrementer(new RunIdIncrementer());
+        if (jobLogListener != null) {
+            jobBuilder.listener(jobLogListener);
+        }
         SimpleJobBuilder simpleBuilder = null;
         for (StepDefinition definition : steps) {
             Step step = buildStep(name, definition);

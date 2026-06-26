@@ -126,11 +126,22 @@ public class BatchAdminAutoConfiguration {
         return operator;
     }
 
-    /** Registers the host application's {@code Job} beans into the registry so they are launchable. */
+    /**
+     * Registers the host application's {@code Job} beans into the registry so they are launchable,
+     * and attaches the per-execution log listener to them so their logs are captured too.
+     */
     @Bean
-    public SmartInitializingSingleton batchAdminJobBeanRegistrar(JobRegistry jobRegistry,
-                                                                 ObjectProvider<Job> jobs) {
+    public SmartInitializingSingleton batchAdminJobBeanRegistrar(
+            JobRegistry jobRegistry,
+            ObjectProvider<Job> jobs,
+            ObjectProvider<io.batchadmin.logs.JobLogExecutionListener> logListener) {
+        io.batchadmin.logs.JobLogExecutionListener listener = logListener.getIfAvailable();
         return () -> jobs.forEach(job -> {
+            if (listener != null && job instanceof org.springframework.batch.core.job.AbstractJob abstractJob) {
+                // Appends to the job's composite listener (does not replace existing listeners).
+                abstractJob.setJobExecutionListeners(
+                        new org.springframework.batch.core.JobExecutionListener[]{listener});
+            }
             if (!jobRegistry.getJobNames().contains(job.getName())) {
                 try {
                     jobRegistry.register(new ReferenceJobFactory(job));
@@ -187,9 +198,10 @@ public class BatchAdminAutoConfiguration {
                                                JobDefinitionDao jobDefinitionDao,
                                                List<TaskletProvider> providers,
                                                ObjectMapper objectMapper,
-                                               BatchAdminProperties properties) {
+                                               BatchAdminProperties properties,
+                                               ObjectProvider<io.batchadmin.logs.JobLogExecutionListener> logListener) {
         return new DynamicJobService(jobRegistry, jobRepository, transactionManager, jobDefinitionDao,
-                providers, objectMapper, properties);
+                providers, objectMapper, properties, logListener.getIfAvailable());
     }
 
     @Bean
@@ -305,9 +317,56 @@ public class BatchAdminAutoConfiguration {
                 DynamicJobService dynamicJobService,
                 ObservabilityService observabilityService,
                 org.springframework.beans.factory.ObjectProvider<JobSchedulingService> schedulingService,
+                org.springframework.beans.factory.ObjectProvider<io.batchadmin.service.JobLogService> jobLogService,
                 BatchAdminProperties properties) {
             return new BatchAdminViewController(jobAdminService, dynamicJobService, observabilityService,
-                    schedulingService, properties);
+                    schedulingService, jobLogService, properties);
+        }
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Per-execution log capture (optional; requires Logback)
+    // ----------------------------------------------------------------------------------------
+
+    @org.springframework.context.annotation.Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "ch.qos.logback.classic.LoggerContext")
+    @ConditionalOnProperty(prefix = "batch.admin.logs", name = "enabled", havingValue = "true",
+            matchIfMissing = true)
+    public static class LoggingConfiguration {
+
+        @Bean
+        @ConditionalOnMissingBean
+        public io.batchadmin.logs.BatchAdminLogStore batchAdminLogStore(BatchAdminProperties properties) {
+            return new io.batchadmin.logs.BatchAdminLogStore(
+                    properties.getLogs().getMaxRecordsPerExecution(),
+                    properties.getLogs().getMaxExecutions());
+        }
+
+        @Bean
+        public io.batchadmin.logs.JobLogExecutionListener batchAdminJobLogListener() {
+            return new io.batchadmin.logs.JobLogExecutionListener();
+        }
+
+        @Bean
+        public io.batchadmin.logs.BatchAdminLogbackInitializer batchAdminLogbackInitializer(
+                io.batchadmin.logs.BatchAdminLogStore store, BatchAdminProperties properties) {
+            return new io.batchadmin.logs.BatchAdminLogbackInitializer(store, properties);
+        }
+
+        @Bean
+        @ConditionalOnMissingBean
+        public io.batchadmin.service.JobLogService jobLogService(
+                io.batchadmin.logs.BatchAdminLogStore store,
+                JobAdminService jobAdminService,
+                BatchAdminProperties properties) {
+            return new io.batchadmin.service.JobLogService(store, jobAdminService, properties);
+        }
+
+        @Bean
+        @ConditionalOnWebApplication
+        public io.batchadmin.web.JobLogController batchAdminJobLogController(
+                io.batchadmin.service.JobLogService jobLogService) {
+            return new io.batchadmin.web.JobLogController(jobLogService);
         }
     }
 
