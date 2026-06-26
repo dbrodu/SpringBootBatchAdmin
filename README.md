@@ -211,6 +211,43 @@ spring:
             issuer-uri: https://idp.example.com/realms/batch
 ```
 
+### 8. Publish lifecycle events (pub/sub)
+Every job run emits **lifecycle events** — `JOB_STARTED`, then `JOB_COMPLETED` / `JOB_STOPPED` /
+`JOB_FAILED` — through a `BatchEventPublisher` abstraction. Each `BatchEvent` carries the job name,
+execution/instance ids, status, exit code, timestamp and parameters.
+
+By **default** events are published **in-process** with zero infrastructure: as a Spring
+`ApplicationEvent` (so any host bean can consume them) and to the log. Consume them anywhere:
+
+```java
+@Component
+class OrdersAlerts {
+    @EventListener
+    void on(BatchEvent event) {
+        if (event.type() == BatchEventType.JOB_FAILED) { /* alert… */ }
+    }
+}
+```
+
+To fan events out to a **message broker**, add Spring AMQP and switch the broker to RabbitMQ — events
+are sent to a topic exchange with the routing key `<prefix>.<jobName>.<eventType>`
+(e.g. `batch.admin.ordersJob.job_completed`), so consumers bind exactly to the jobs and moments they
+care about:
+
+```yaml
+batch:
+  admin:
+    events:
+      enabled: true
+      broker: rabbit                 # default: application (in-process)
+      exchange: batch.admin.events
+      routing-key-prefix: batch.admin
+```
+
+Spring AMQP is an **optional** dependency (only needed for `broker: rabbit`), and a publisher failure
+never breaks the job it observes. Host applications can register their own `BatchEventPublisher` bean
+to integrate any other transport (Kafka, SNS, a webhook, …).
+
 ---
 
 ## Reusable building blocks
@@ -358,6 +395,11 @@ batch:
       enabled: false               # opt-in OAuth2/OIDC for the API and GUI (see section 7)
       api-authority:               # optional authority/scope required to call the REST API
       ui-authority:                # optional authority required to use the GUI
+    events:
+      enabled: true                # publish job-lifecycle events (see section 8)
+      broker: application          # application (in-process) | rabbit
+      exchange: batch.admin.events # RabbitMQ exchange when broker=rabbit
+      routing-key-prefix: batch.admin
 ```
 
 ---

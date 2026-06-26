@@ -49,6 +49,9 @@ public class BatchAdminProperties {
     /** Optional OAuth2/OIDC security sub-configuration. */
     private final Security security = new Security();
 
+    /** Pub/sub job-lifecycle events sub-configuration. */
+    private final Events events = new Events();
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -99,6 +102,10 @@ public class BatchAdminProperties {
 
     public Security getSecurity() {
         return security;
+    }
+
+    public Events getEvents() {
+        return events;
     }
 
     /** The API path is always the base path suffixed with {@code /api}. */
@@ -321,6 +328,71 @@ public class BatchAdminProperties {
 
         public void setUiAuthority(String uiAuthority) {
             this.uiAuthority = uiAuthority;
+        }
+    }
+
+    /**
+     * Pub/sub of job-lifecycle events. Enabled by default with the in-process
+     * {@link Broker#APPLICATION} publisher (Spring application events + log), so no infrastructure is
+     * required. Switch {@code broker} to {@link Broker#RABBIT} (with Spring AMQP on the classpath) to
+     * fan events out to a RabbitMQ topic exchange. Host applications may also register their own
+     * {@code BatchEventPublisher} bean to integrate any other transport.
+     */
+    public static class Events {
+
+        /** Transport used to publish lifecycle events. */
+        public enum Broker {
+            /** In-process Spring {@code ApplicationEvent} + log (default, no infrastructure). */
+            APPLICATION,
+            /** RabbitMQ topic exchange (requires Spring AMQP and a {@code RabbitTemplate}). */
+            RABBIT
+        }
+
+        /** Whether lifecycle events are published at all. */
+        private boolean enabled = true;
+
+        /** Which publisher to activate. */
+        private Broker broker = Broker.APPLICATION;
+
+        /** Target exchange name when {@code broker=rabbit}. */
+        private String exchange = "batch.admin.events";
+
+        /**
+         * Routing-key prefix when {@code broker=rabbit}; the full key is
+         * {@code <prefix>.<jobName>.<eventType>}.
+         */
+        private String routingKeyPrefix = "batch.admin";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public Broker getBroker() {
+            return broker;
+        }
+
+        public void setBroker(Broker broker) {
+            this.broker = broker;
+        }
+
+        public String getExchange() {
+            return exchange;
+        }
+
+        public void setExchange(String exchange) {
+            this.exchange = exchange;
+        }
+
+        public String getRoutingKeyPrefix() {
+            return routingKeyPrefix;
+        }
+
+        public void setRoutingKeyPrefix(String routingKeyPrefix) {
+            this.routingKeyPrefix = routingKeyPrefix;
         }
     }
 }

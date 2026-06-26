@@ -128,19 +128,23 @@ public class BatchAdminAutoConfiguration {
 
     /**
      * Registers the host application's {@code Job} beans into the registry so they are launchable,
-     * and attaches the per-execution log listener to them so their logs are captured too.
+     * and attaches the component's own listeners (per-execution log capture and lifecycle event
+     * publishing) to them.
      */
     @Bean
     public SmartInitializingSingleton batchAdminJobBeanRegistrar(
             JobRegistry jobRegistry,
             ObjectProvider<Job> jobs,
-            ObjectProvider<io.batchadmin.logs.JobLogExecutionListener> logListener) {
-        io.batchadmin.logs.JobLogExecutionListener listener = logListener.getIfAvailable();
+            ObjectProvider<io.batchadmin.logs.JobLogExecutionListener> logListener,
+            ObjectProvider<io.batchadmin.event.BatchEventPublishingListener> eventListener) {
+        List<org.springframework.batch.core.JobExecutionListener> listeners =
+                componentJobListeners(logListener, eventListener);
         return () -> jobs.forEach(job -> {
-            if (listener != null && job instanceof org.springframework.batch.core.job.AbstractJob abstractJob) {
+            if (!listeners.isEmpty()
+                    && job instanceof org.springframework.batch.core.job.AbstractJob abstractJob) {
                 // Appends to the job's composite listener (does not replace existing listeners).
                 abstractJob.setJobExecutionListeners(
-                        new org.springframework.batch.core.JobExecutionListener[]{listener});
+                        listeners.toArray(new org.springframework.batch.core.JobExecutionListener[0]));
             }
             if (!jobRegistry.getJobNames().contains(job.getName())) {
                 try {
@@ -226,10 +230,27 @@ public class BatchAdminAutoConfiguration {
                                                ObjectMapper objectMapper,
                                                BatchAdminProperties properties,
                                                ObjectProvider<io.batchadmin.logs.JobLogExecutionListener> logListener,
+                                               ObjectProvider<io.batchadmin.event.BatchEventPublishingListener> eventListener,
                                                io.batchadmin.metadata.ValueResolver valueResolver) {
         return new DynamicJobService(jobRegistry, jobRepository, transactionManager, jobDefinitionDao,
-                providers, stepProviders, objectMapper, properties, logListener.getIfAvailable(),
-                valueResolver);
+                providers, stepProviders, objectMapper, properties,
+                componentJobListeners(logListener, eventListener), valueResolver);
+    }
+
+    /** Component-owned job listeners (log capture, event publishing) attached to every job. */
+    private static List<org.springframework.batch.core.JobExecutionListener> componentJobListeners(
+            ObjectProvider<io.batchadmin.logs.JobLogExecutionListener> logListener,
+            ObjectProvider<io.batchadmin.event.BatchEventPublishingListener> eventListener) {
+        List<org.springframework.batch.core.JobExecutionListener> listeners = new java.util.ArrayList<>(2);
+        org.springframework.batch.core.JobExecutionListener log = logListener.getIfAvailable();
+        if (log != null) {
+            listeners.add(log);
+        }
+        org.springframework.batch.core.JobExecutionListener events = eventListener.getIfAvailable();
+        if (events != null) {
+            listeners.add(events);
+        }
+        return listeners;
     }
 
     @Bean
@@ -420,6 +441,55 @@ public class BatchAdminAutoConfiguration {
                         .description("Number of enabled cron schedules")
                         .register(registry);
             };
+        }
+    }
+
+    // ----------------------------------------------------------------------------------------
+    // Pub/sub job-lifecycle events (optional broker)
+    // ----------------------------------------------------------------------------------------
+
+    @org.springframework.context.annotation.Configuration(proxyBeanMethods = false)
+    @ConditionalOnProperty(prefix = "batch.admin.events", name = "enabled", havingValue = "true",
+            matchIfMissing = true)
+    public static class EventsConfiguration {
+
+        /** Default in-process publisher: Spring application events + log. Host beans may override. */
+        @Bean
+        @ConditionalOnMissingBean(io.batchadmin.event.BatchEventPublisher.class)
+        @ConditionalOnProperty(prefix = "batch.admin.events", name = "broker", havingValue = "application",
+                matchIfMissing = true)
+        public io.batchadmin.event.BatchEventPublisher applicationBatchEventPublisher(
+                org.springframework.context.ApplicationEventPublisher applicationEventPublisher) {
+            return new io.batchadmin.event.ApplicationBatchEventPublisher(applicationEventPublisher);
+        }
+
+        /**
+         * Listener that turns job lifecycle callbacks into published events. The publisher is
+         * resolved lazily (via {@link ObjectProvider}) so this does not depend on bean-definition
+         * ordering between the in-process and broker-backed publisher configurations.
+         */
+        @Bean
+        public io.batchadmin.event.BatchEventPublishingListener batchEventPublishingListener(
+                ObjectProvider<io.batchadmin.event.BatchEventPublisher> publisher) {
+            return new io.batchadmin.event.BatchEventPublishingListener(publisher.getIfAvailable());
+        }
+
+        /** RabbitMQ publisher, activated with {@code batch.admin.events.broker=rabbit}. */
+        @org.springframework.context.annotation.Configuration(proxyBeanMethods = false)
+        @ConditionalOnClass(org.springframework.amqp.rabbit.core.RabbitTemplate.class)
+        @ConditionalOnProperty(prefix = "batch.admin.events", name = "broker", havingValue = "rabbit")
+        public static class RabbitEventsConfiguration {
+
+            @Bean
+            @ConditionalOnMissingBean(io.batchadmin.event.BatchEventPublisher.class)
+            @ConditionalOnBean(org.springframework.amqp.rabbit.core.RabbitTemplate.class)
+            public io.batchadmin.event.BatchEventPublisher rabbitBatchEventPublisher(
+                    org.springframework.amqp.rabbit.core.RabbitTemplate rabbitTemplate,
+                    BatchAdminProperties properties) {
+                return new io.batchadmin.event.RabbitBatchEventPublisher(rabbitTemplate,
+                        properties.getEvents().getExchange(),
+                        properties.getEvents().getRoutingKeyPrefix());
+            }
         }
     }
 }
