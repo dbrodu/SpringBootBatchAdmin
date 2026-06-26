@@ -91,6 +91,22 @@ notify  = log (message=done)
 
 Dynamically created jobs are **persisted** and re-registered on every restart.
 
+Beyond tasklet building blocks, richer **chunk-oriented step types** can be contributed (the
+`StepProvider` SPI). One ships out of the box: **`sql-export`** — a paged SQL query → JSON → target
+(OpenSearch via its `_bulk` API, or the log for a dry run). The **Create job** screen has a dedicated
+form for it, so operators can build a *SQL → OpenSearch export* job with no code; it is equally
+available through the API:
+
+```bash
+curl -X POST http://localhost:8080/batch-admin/api/jobs -H 'Content-Type: application/json' -d '{
+  "jobName":"ordersToOpenSearch",
+  "steps":[{"name":"export","type":"sql-export","properties":{
+    "select":"id, customer, amount", "from":"orders", "where":"status = '\''NEW'\''",
+    "sort":"id", "pageSize":"500",
+    "target":"opensearch", "baseUrl":"https://opensearch:9200", "index":"orders", "idField":"id"
+  }}]}'
+```
+
 ### 3. Schedule jobs
 Any launchable job can be given a **schedule**. Schedules are persisted and re-armed on startup.
 The frequency is entered in **plain language** (French or English) and converted to a Spring cron
@@ -130,6 +146,107 @@ Capture is bounded in memory (most recent records per execution, oldest executio
 never grows unbounded. The capture threshold, default read level and buffer sizes are configurable
 (see below). Logs below the application's effective logger level are never emitted, so to capture
 `DEBUG` you must also lower the relevant logger level. Requires Logback (the Spring Boot default).
+
+### 6. Metadata-driven parameters (SpEL)
+To fit a **metadata-driven architecture**, job parameters and dynamic-job step properties may contain
+**SpEL** expressions, resolved at launch/build time against a `MetadataService` and a few built-ins:
+
+```bash
+curl -X POST .../api/jobs/dailyReportJob/executions -H 'Content-Type: application/json' -d '{
+  "parameters": { "region": "#{metadata.get('\''region'\'')}", "asOfDate": "#{today}" } }'
+```
+
+The expression root exposes `metadata` (the `MetadataService`), `today` (`LocalDate`), `now`
+(`Instant`) and `timestamp` (`LocalDateTime`). The default `MetadataService` is backed by the
+`batch.admin.metadata.*` properties; **replace the bean to plug your real metadata source**:
+
+```java
+@Bean
+MetadataService metadataService(MyRegistry registry) {
+    return key -> registry.lookup(key);
+}
+```
+
+Evaluation uses a **sandboxed** SpEL context (property reads + instance method calls only — no type
+references or constructors) and can be disabled with `batch.admin.expressions.enabled=false`.
+
+### 7. Secure with OAuth2 / OIDC (optional)
+By default the component adds **no** security — it assumes the host application protects
+`/batch-admin/**` itself. Set `batch.admin.security.enabled=true` to have it install two filter
+chains **scoped to its own paths** (it never takes over the rest of your app):
+
+- the **REST API** (`/batch-admin/api/**`) becomes a stateless **OAuth2 resource server** validating
+  bearer **JWT**s — configured with the standard
+  `spring.security.oauth2.resourceserver.jwt.*` properties;
+- the **GUI** (`/batch-admin/**`) uses interactive **OIDC login** — configured with the standard
+  `spring.security.oauth2.client.registration.*` / `provider.*` properties.
+
+The two chains are independent, so an API-only or a GUI-only deployment works without the other.
+Optionally require a specific authority/scope per surface with `batch.admin.security.api-authority`
+and `batch.admin.security.ui-authority`. The security stack is an **optional** dependency: it is only
+pulled in when you add Spring Security (e.g. `spring-boot-starter-oauth2-client` /
+`spring-boot-starter-oauth2-resource-server`) to your application.
+
+```yaml
+batch:
+  admin:
+    security:
+      enabled: true
+      api-authority: SCOPE_batch.admin      # optional; any authenticated token otherwise
+      ui-authority: ROLE_BATCH_ADMIN        # optional; any authenticated OIDC user otherwise
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://idp.example.com/realms/batch
+      client:
+        registration:
+          batch-admin:
+            client-id: batch-admin
+            client-secret: ${OIDC_CLIENT_SECRET}
+            scope: openid, profile
+        provider:
+          batch-admin:
+            issuer-uri: https://idp.example.com/realms/batch
+```
+
+### 8. Publish lifecycle events (pub/sub)
+Every job run emits **lifecycle events** — `JOB_STARTED`, then `JOB_COMPLETED` / `JOB_STOPPED` /
+`JOB_FAILED` — through a `BatchEventPublisher` abstraction. Each `BatchEvent` carries the job name,
+execution/instance ids, status, exit code, timestamp and parameters.
+
+By **default** events are published **in-process** with zero infrastructure: as a Spring
+`ApplicationEvent` (so any host bean can consume them) and to the log. Consume them anywhere:
+
+```java
+@Component
+class OrdersAlerts {
+    @EventListener
+    void on(BatchEvent event) {
+        if (event.type() == BatchEventType.JOB_FAILED) { /* alert… */ }
+    }
+}
+```
+
+To fan events out to a **message broker**, add Spring AMQP and switch the broker to RabbitMQ — events
+are sent to a topic exchange with the routing key `<prefix>.<jobName>.<eventType>`
+(e.g. `batch.admin.ordersJob.job_completed`), so consumers bind exactly to the jobs and moments they
+care about:
+
+```yaml
+batch:
+  admin:
+    events:
+      enabled: true
+      broker: rabbit                 # default: application (in-process)
+      exchange: batch.admin.events
+      routing-key-prefix: batch.admin
+```
+
+Spring AMQP is an **optional** dependency (only needed for `broker: rabbit`), and a publisher failure
+never breaks the job it observes. Host applications can register their own `BatchEventPublisher` bean
+to integrate any other transport (Kafka, SNS, a webhook, …).
 
 ---
 
@@ -270,6 +387,19 @@ batch:
       default-read-level: INFO     # default minimum level when reading logs
       max-records-per-execution: 2000
       max-executions: 200          # executions kept in the in-memory log buffer
+    expressions:
+      enabled: true                # resolve SpEL in parameters / step properties
+    metadata:                      # static metadata exposed to expressions (default MetadataService)
+      region: EU
+    security:
+      enabled: false               # opt-in OAuth2/OIDC for the API and GUI (see section 7)
+      api-authority:               # optional authority/scope required to call the REST API
+      ui-authority:                # optional authority required to use the GUI
+    events:
+      enabled: true                # publish job-lifecycle events (see section 8)
+      broker: application          # application (in-process) | rabbit
+      exchange: batch.admin.events # RabbitMQ exchange when broker=rabbit
+      routing-key-prefix: batch.admin
 ```
 
 ---

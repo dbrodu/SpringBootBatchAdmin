@@ -6,12 +6,15 @@ import io.batchadmin.autoconfigure.BatchAdminProperties;
 import io.batchadmin.domain.JobDefinitionDao;
 import io.batchadmin.domain.JobDefinitionRecord;
 import io.batchadmin.dynamic.StepDefinition;
+import io.batchadmin.dynamic.StepProvider;
 import io.batchadmin.dynamic.TaskletProvider;
+import io.batchadmin.metadata.ValueResolver;
 import io.batchadmin.web.dto.CreateJobRequest;
 import io.batchadmin.web.dto.ProviderInfo;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.batch.core.Job;
@@ -44,34 +47,51 @@ public class DynamicJobService {
     private final PlatformTransactionManager transactionManager;
     private final JobDefinitionDao definitionDao;
     private final Map<String, TaskletProvider> providers;
+    private final Map<String, StepProvider> stepProviders;
     private final ObjectMapper objectMapper;
     private final BatchAdminProperties properties;
-    private final JobExecutionListener jobLogListener;
+    private final List<JobExecutionListener> componentListeners;
+    private final ValueResolver valueResolver;
 
     public DynamicJobService(JobRegistry jobRegistry,
                              JobRepository jobRepository,
                              PlatformTransactionManager transactionManager,
                              JobDefinitionDao definitionDao,
                              List<TaskletProvider> providers,
+                             List<StepProvider> stepProviders,
                              ObjectMapper objectMapper,
                              BatchAdminProperties properties,
-                             JobExecutionListener jobLogListener) {
+                             List<JobExecutionListener> componentListeners,
+                             ValueResolver valueResolver) {
         this.jobRegistry = jobRegistry;
         this.jobRepository = jobRepository;
         this.transactionManager = transactionManager;
         this.definitionDao = definitionDao;
         this.objectMapper = objectMapper;
         this.properties = properties;
-        this.jobLogListener = jobLogListener;
+        this.componentListeners = componentListeners == null ? List.of() : componentListeners;
+        this.valueResolver = valueResolver;
         Map<String, TaskletProvider> byType = new LinkedHashMap<>();
         for (TaskletProvider provider : providers) {
             byType.put(provider.getType().toLowerCase(), provider);
         }
         this.providers = byType;
+        Map<String, StepProvider> stepByType = new LinkedHashMap<>();
+        for (StepProvider provider : stepProviders) {
+            stepByType.put(provider.getType().toLowerCase(), provider);
+        }
+        this.stepProviders = stepByType;
     }
 
     public List<ProviderInfo> listProviders() {
         return providers.values().stream()
+                .map(p -> new ProviderInfo(p.getType(), p.getDisplayName(), p.describeProperties()))
+                .toList();
+    }
+
+    /** Step providers (chunk-oriented building blocks such as {@code sql-export}). */
+    public List<ProviderInfo> listStepProviders() {
+        return stepProviders.values().stream()
                 .map(p -> new ProviderInfo(p.getType(), p.getDisplayName(), p.describeProperties()))
                 .toList();
     }
@@ -136,17 +156,22 @@ public class DynamicJobService {
             if (step.name() == null || step.name().isBlank()) {
                 throw BatchAdminException.badRequest("Every step needs a name");
             }
-            if (!providers.containsKey(step.type() == null ? "" : step.type().toLowerCase())) {
+            String type = step.type() == null ? "" : step.type().toLowerCase();
+            if (!providers.containsKey(type) && !stepProviders.containsKey(type)) {
+                Set<String> available = new java.util.TreeSet<>(providers.keySet());
+                available.addAll(stepProviders.keySet());
                 throw BatchAdminException.badRequest("Unknown step type '" + step.type()
-                        + "'. Available types: " + providers.keySet());
+                        + "'. Available types: " + available);
             }
         }
     }
 
     private Job buildJob(String name, List<StepDefinition> steps) {
         JobBuilder jobBuilder = new JobBuilder(name, jobRepository).incrementer(new RunIdIncrementer());
-        if (jobLogListener != null) {
-            jobBuilder.listener(jobLogListener);
+        for (JobExecutionListener listener : componentListeners) {
+            if (listener != null) {
+                jobBuilder.listener(listener);
+            }
         }
         SimpleJobBuilder simpleBuilder = null;
         for (StepDefinition definition : steps) {
@@ -157,9 +182,25 @@ public class DynamicJobService {
     }
 
     private Step buildStep(String jobName, StepDefinition definition) {
-        TaskletProvider provider = providers.get(definition.type().toLowerCase());
-        Tasklet tasklet = provider.create(definition.properties());
-        return new StepBuilder(jobName + "." + definition.name(), jobRepository)
+        String stepName = jobName + "." + definition.name();
+        String type = definition.type().toLowerCase();
+        // Resolve any SpEL / metadata expression in the step properties (e.g. an index name from
+        // metadata) once, for both chunk-oriented step providers and tasklet providers.
+        Map<String, Object> properties = valueResolver.resolveProperties(definition.properties());
+
+        StepProvider stepProvider = stepProviders.get(type);
+        if (stepProvider != null) {
+            try {
+                return stepProvider.buildStep(stepName, properties,
+                        new StepProvider.Context(jobRepository, transactionManager));
+            } catch (IllegalArgumentException ex) {
+                throw BatchAdminException.badRequest(ex.getMessage());
+            }
+        }
+
+        TaskletProvider provider = providers.get(type);
+        Tasklet tasklet = provider.create(properties);
+        return new StepBuilder(stepName, jobRepository)
                 .tasklet(tasklet, transactionManager)
                 .build();
     }

@@ -112,9 +112,43 @@ explicit avoids surprises.)
 
 ## 6. Secure the endpoints (important)
 
-The component does **not** add authentication. The GUI and API are exposed on the application port
-under `batch.admin.base-path` (default `/batch-admin`). If your app is reachable by anyone, protect
-the route — for example with Spring Security:
+The GUI and API are exposed on the application port under `batch.admin.base-path`
+(default `/batch-admin`). By default the component adds **no** authentication, so if your app is
+reachable by anyone you must protect the route. You have two options.
+
+### Option A — let the component secure itself (OAuth2 / OIDC, opt-in)
+
+Set `batch.admin.security.enabled=true` and add Spring Security (the OAuth2 starters). The component
+then installs two filter chains **scoped to its own paths** — it never takes over the rest of your
+app: the **REST API** becomes a stateless **OAuth2 resource server** (bearer JWTs) and the **GUI**
+uses interactive **OIDC login**, both configured from the standard `spring.security.oauth2.*`
+properties:
+
+```yaml
+batch:
+  admin:
+    security:
+      enabled: true
+      api-authority: SCOPE_batch.admin   # optional; any authenticated token otherwise
+      ui-authority: ROLE_BATCH_ADMIN     # optional; any authenticated OIDC user otherwise
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://idp.example.com/realms/batch
+      client:
+        registration:
+          batch-admin: { client-id: batch-admin, client-secret: ${OIDC_CLIENT_SECRET}, scope: openid }
+        provider:
+          batch-admin: { issuer-uri: https://idp.example.com/realms/batch }
+```
+
+The two chains are independent, so an API-only or GUI-only deployment works without the other.
+
+### Option B — protect the route with your own Spring Security
+
+If you already run your own filter chain (or don't use OAuth2), just guard the base path yourself:
 
 ```java
 @Bean
@@ -127,8 +161,8 @@ SecurityFilterChain security(HttpSecurity http) throws Exception {
 }
 ```
 
-You can also disable parts you don't want exposed: `batch.admin.ui-enabled=false` (API only),
-`batch.admin.dynamic-jobs.enabled=false`, `batch.admin.scheduling.enabled=false`.
+Either way, you can also disable parts you don't want exposed: `batch.admin.ui-enabled=false`
+(API only), `batch.admin.dynamic-jobs.enabled=false`, `batch.admin.scheduling.enabled=false`.
 
 ---
 
@@ -171,6 +205,13 @@ adds a unique `run.id` (Long) on every manual start so each launch creates a **n
   **HTTP 400** with the validator's message — pass the required parameters in the request.
 - If your job defines a `JobParametersIncrementer`, note the admin already injects `run.id`; you do
   not need to add one for manual launches.
+
+> **Metadata & SpEL.** Parameter values may contain `#{…}` SpEL expressions, resolved at launch time
+> against a `MetadataService` and the built-ins `today`/`now`/`timestamp` — useful to wire values from
+> a metadata-driven platform instead of hard-coding them, e.g.
+> `{"region":"#{metadata.get('region')}","asOfDate":"#{today}"}`. The default `MetadataService` reads
+> `batch.admin.metadata.*`; replace the bean to plug your real source. Evaluation is sandboxed and can
+> be switched off with `batch.admin.expressions.enabled=false`.
 
 ### Stop
 **Stop** sets the execution to `STOPPING` via `JobOperator`. Chunk-oriented steps stop at the next
@@ -239,7 +280,42 @@ Schedules are persisted and re-armed on restart.
 
 ---
 
-## 11. Optional: expose your domain as building blocks
+## 11. Subscribe to job-lifecycle events (optional)
+
+Every administered job emits lifecycle events — `JOB_STARTED`, then
+`JOB_COMPLETED` / `JOB_STOPPED` / `JOB_FAILED` — carrying the job name, execution id, status, exit
+code and parameters. By default they are published **in-process** (no infrastructure), so any bean can
+react to them:
+
+```java
+@Component
+class JobAlerts {
+    @EventListener
+    void on(BatchEvent event) {
+        if (event.type() == BatchEventType.JOB_FAILED) { /* page on-call, etc. */ }
+    }
+}
+```
+
+To fan them out to a broker, add Spring AMQP and switch to RabbitMQ — events go to a topic exchange
+keyed `<prefix>.<jobName>.<eventType>` so consumers bind precisely:
+
+```yaml
+batch:
+  admin:
+    events:
+      broker: rabbit               # default: application (in-process); set to publish to RabbitMQ
+      exchange: batch.admin.events
+      routing-key-prefix: batch.admin
+```
+
+A publisher failure is logged and never breaks the job. To target another transport (Kafka, SNS, a
+webhook…), register your own `BatchEventPublisher` bean. Disable entirely with
+`batch.admin.events.enabled=false`.
+
+---
+
+## 12. Optional: expose your domain as building blocks
 
 You don't need this to administer existing jobs. But if you want operators to **compose new jobs on
 the fly** from your domain operations, expose each operation as a `TaskletProvider` bean:
@@ -260,28 +336,36 @@ public class PurgeTableTaskletProvider implements TaskletProvider {
 It then appears in the **Create job** screen, and operators can assemble steps like
 `cleanup = purge-table (table=TMP_IMPORT)`.
 
+For richer **chunk-oriented** building blocks (a full reader → processor → writer step), implement the
+`StepProvider` SPI instead. One ships out of the box — `sql-export` — a paged SQL query → JSON →
+**OpenSearch** (or the log) export, available as a dedicated **Create job** form and through the API,
+plus generic `GenericSqlItemReader` / `JsonItemProcessor` / `GenericJsonItemWriter` pieces you can
+reuse in your own steps. Building these from the GUI lets operators run arbitrary `SELECT`s and push
+to a configured URL — another reason to protect `/batch-admin/**` (§6).
+
 ---
 
-## 12. What the component does and does not change
+## 13. What the component does and does not change
 
 **Does:**
-- Registers your `Job` beans into the `JobRegistry` (so they are launchable) and attaches a log
-  listener to them.
+- Registers your `Job` beans into the `JobRegistry` (so they are launchable) and attaches its own
+  listeners (per-execution log capture and lifecycle-event publishing) to them.
 - Adds two `BATCH_ADMIN_*` tables and serves a GUI + REST API under `batch.admin.base-path`.
 
 **Does not:**
 - Touch your JPA/Hibernate, transaction manager, or your own `jobLauncher`.
-- Override beans you already define (`JobOperator`, a `batchAdminJobLauncher`, etc. are
-  `@ConditionalOnMissingBean`).
+- Override beans you already define (`JobOperator`, a `batchAdminJobLauncher`, a `MetadataService`, a
+  `BatchEventPublisher`, etc. are `@ConditionalOnMissingBean`).
 - Run your jobs unless asked (launches are on demand or via schedules you create).
-- Add authentication — that's your responsibility (§6).
+- Add authentication **unless you opt in** (`batch.admin.security.enabled=true`, §6); otherwise
+  securing the route is your responsibility.
 
 Its exception handling is scoped to the `io.batchadmin.web` controllers, so it won't interfere with
 your application's own error handling.
 
 ---
 
-## 13. Coming from Spring Cloud Data Flow / the old Spring Batch Admin
+## 14. Coming from Spring Cloud Data Flow / the old Spring Batch Admin
 
 | You used to… | Now |
 | ------------ | --- |
@@ -292,7 +376,7 @@ your application's own error handling.
 
 ---
 
-## 14. Troubleshooting
+## 15. Troubleshooting
 
 | Symptom | Likely cause / fix |
 | ------- | ------------------ |
@@ -302,18 +386,21 @@ your application's own error handling.
 | `400 Bad Request` on start | A `JobParametersValidator` rejected the parameters — pass the required ones. |
 | Stop doesn't take effect quickly | A long custom `Tasklet` isn't checking `isTerminateOnly()` (see §8). |
 | Logs empty | Not using Logback, the logger level is above `capture-level`, or logs were on a child thread (§9). |
-| GUI reachable by anyone | Add Spring Security on `/batch-admin/**` (§6). |
+| GUI reachable by anyone | Enable the built-in OAuth2/OIDC layer or add your own Spring Security on `/batch-admin/**` (§6). |
+| `#{…}` parameter passed through literally | Expression resolution is off (`batch.admin.expressions.enabled=false`) or the key is missing from the `MetadataService` (§8). |
+| No lifecycle events received | `batch.admin.events.enabled=false`, or `broker: rabbit` is set but no reachable `RabbitTemplate`/broker (§11). |
 
 ---
 
-## 15. Migration checklist
+## 16. Migration checklist
 
 - [ ] Add the `spring-boot-batch-admin-starter` dependency.
 - [ ] Confirm each job is a Spring `Job` bean with a unique, stable name.
 - [ ] Ensure the Spring Batch `BATCH_*` tables exist.
 - [ ] Set `spring.batch.job.enabled=false` (launch on demand).
-- [ ] Secure `/batch-admin/**`.
+- [ ] Secure `/batch-admin/**` — enable the built-in OAuth2/OIDC layer or add your own filter chain.
 - [ ] Start the app, open `/batch-admin`, confirm your jobs appear and launch.
 - [ ] (If needed) make long tasklets interruptible for prompt **Stop**.
-- [ ] (Optional) expose domain operations as `TaskletProvider` beans.
+- [ ] (Optional) expose domain operations as `TaskletProvider` / `StepProvider` beans.
 - [ ] (Optional) create schedules and adjust `batch.admin.logs.*` levels.
+- [ ] (Optional) wire parameters from metadata/SpEL and subscribe to lifecycle events.

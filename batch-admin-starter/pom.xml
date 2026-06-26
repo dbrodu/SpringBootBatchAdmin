@@ -46,6 +46,34 @@
             <artifactId>micrometer-core</artifactId>
         </dependency>
 
+        <!-- Optional security layer: OIDC login for the GUI and a JWT resource server for the API.
+             Marked optional so the component imposes no security stack on host applications that do
+             not opt in (batch.admin.security.enabled=true). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-client</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Optional message broker: enables the RabbitMQ event publisher
+             (batch.admin.events.broker=rabbit). Optional so the component imposes no broker on host
+             applications that do not opt in; the default publisher uses in-process Spring events. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+            <optional>true</optional>
+        </dependency>
+
         <!-- Generates spring-configuration-metadata.json for the @ConfigurationProperties -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -56,6 +84,11 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

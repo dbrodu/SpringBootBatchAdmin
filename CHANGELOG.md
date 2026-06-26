@@ -5,6 +5,60 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims
 to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+**Reusable SQL → JSON → target building blocks**
+- `GenericSqlItemReader` / `GenericSqlItemReaderBuilder` — a configurable `ItemReader` that streams the
+  rows of an arbitrary SQL query as `Map<String, Object>` (or maps to your own type) with no mapping
+  code.
+- `GenericSqlPagingItemReader` / `…Builder` — a paging counterpart for large result sets.
+- `JsonItemProcessor` — turns reader rows into JSON documents.
+- `GenericJsonItemWriter` writing to a pluggable `JsonDocumentSink`, with two sinks shipped:
+  `OpenSearchBulkJsonSink` (the OpenSearch `_bulk` API, via the JDK `HttpClient`) and
+  `LoggingJsonDocumentSink` (dry-run to the log).
+
+**Composable `sql-export` job step (no-code SQL → OpenSearch/log export)**
+- `StepProvider` SPI — contribute whole chunk-oriented steps (reader/processor/writer) to dynamic
+  jobs, a richer counterpart to `TaskletProvider`.
+- `SqlExportStepProvider` (type `sql-export`) — a paged SQL reader → `JsonItemProcessor` →
+  `GenericJsonItemWriter` step targeting **OpenSearch** or the **log**. Exposed both as a dedicated
+  **Create job** GUI form and through the REST API. Auto-configured when a `DataSource` is present.
+
+**Metadata-driven parameters & SpEL** (integrate into a metadata-driven architecture)
+- `MetadataService` SPI with a default `PropertiesMetadataService` backed by `batch.admin.metadata.*`;
+  replace the bean to plug a real metadata catalog.
+- `ValueResolver` — resolves `#{…}` **SpEL** template expressions in job parameters (launch time) and
+  dynamic-job step properties (build time), against a **sandboxed** context exposing `metadata`,
+  `today`, `now` and `timestamp` (read-only property access + instance methods only; type references
+  and constructors are blocked). Toggle with `batch.admin.expressions.enabled`.
+
+**Optional OAuth2 / OIDC security** (`batch.admin.security.enabled=true`, off by default)
+- `BatchAdminSecurityAutoConfiguration` installs up to two filter chains **scoped to the component's
+  own paths** (it never takes over the host app): the **REST API** (`<base-path>/api/**`) becomes a
+  stateless **OAuth2 resource server** validating bearer JWTs, and the **GUI** uses interactive
+  **OIDC login** — both configured from the standard `spring.security.oauth2.*` properties.
+- Optional per-surface authority requirements `batch.admin.security.api-authority` /
+  `…ui-authority`. The Spring Security / OAuth2 dependencies are **optional** (pulled in only when you
+  add them), so consumers that don't opt in are unaffected.
+
+**Pub/sub job-lifecycle events**
+- `BatchEvent` / `BatchEventType` (`JOB_STARTED`, `JOB_COMPLETED`, `JOB_STOPPED`, `JOB_FAILED`) emitted
+  for every administered job through a `BatchEventPublisher` abstraction.
+- Default `ApplicationBatchEventPublisher` (in-process Spring `ApplicationEvent` + log, zero
+  infrastructure) and an opt-in `RabbitBatchEventPublisher` (`batch.admin.events.broker=rabbit`,
+  Spring AMQP **optional**) that fans events to a RabbitMQ topic exchange keyed
+  `<prefix>.<jobName>.<eventType>`. Host apps can register their own `BatchEventPublisher` for any
+  other transport. Configured under `batch.admin.events.*`; publisher failures never break the job.
+
+### Changed
+- The component can now **optionally secure itself** (see above). When the opt-in security layer is
+  disabled (the default), protecting `batch.admin.base-path` remains the host application's
+  responsibility.
+- `DynamicJobService` and the host-job registrar now attach a **list** of component listeners (log
+  capture **and** event publishing) to every job, instead of the single log listener.
+
 ## [0.1.0] — 2026-06-24
 
 Initial version: a **self-initializing, job-agnostic administration component** for Spring Batch jobs
@@ -73,4 +127,5 @@ inside a single Spring Boot application.
 - Requirements: Java 21+, Spring Boot 3.3 / Spring Batch 5, a relational `DataSource`; per-execution
   log capture requires Logback (the Spring Boot default).
 
+[Unreleased]: https://github.com/dbrodu/SpringBootBatchAdmin
 [0.1.0]: https://github.com/dbrodu/SpringBootBatchAdmin

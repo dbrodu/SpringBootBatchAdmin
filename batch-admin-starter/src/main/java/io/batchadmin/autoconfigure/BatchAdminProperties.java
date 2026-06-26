@@ -36,6 +36,22 @@ public class BatchAdminProperties {
     /** Per-execution log capture sub-configuration. */
     private final Logs logs = new Logs();
 
+    /** SpEL expression resolution sub-configuration. */
+    private final Expressions expressions = new Expressions();
+
+    /**
+     * Static metadata exposed to expressions as {@code #{metadata.get('key')}} via the default
+     * {@link io.batchadmin.metadata.PropertiesMetadataService}. Replace that bean to plug a real
+     * metadata source.
+     */
+    private final java.util.Map<String, String> metadata = new java.util.LinkedHashMap<>();
+
+    /** Optional OAuth2/OIDC security sub-configuration. */
+    private final Security security = new Security();
+
+    /** Pub/sub job-lifecycle events sub-configuration. */
+    private final Events events = new Events();
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -74,6 +90,22 @@ public class BatchAdminProperties {
 
     public Logs getLogs() {
         return logs;
+    }
+
+    public Expressions getExpressions() {
+        return expressions;
+    }
+
+    public java.util.Map<String, String> getMetadata() {
+        return metadata;
+    }
+
+    public Security getSecurity() {
+        return security;
+    }
+
+    public Events getEvents() {
+        return events;
     }
 
     /** The API path is always the base path suffixed with {@code /api}. */
@@ -167,6 +199,19 @@ public class BatchAdminProperties {
         }
     }
 
+    public static class Expressions {
+        /** Whether SpEL expression resolution of parameters and step properties is enabled. */
+        private boolean enabled = true;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+    }
+
     public static class Logs {
         /** Whether per-execution log capture is enabled (requires Logback). */
         private boolean enabled = true;
@@ -225,6 +270,129 @@ public class BatchAdminProperties {
 
         public void setMaxExecutions(int maxExecutions) {
             this.maxExecutions = maxExecutions;
+        }
+    }
+
+    /**
+     * Optional OAuth2/OIDC protection of the component. Disabled by default so the component stays
+     * non-intrusive; host applications already secured by their own filter chain keep that behaviour.
+     *
+     * <p>When {@code enabled} is {@code true} the component installs two dedicated filter chains
+     * scoped to its own paths:</p>
+     * <ul>
+     *   <li>the <b>REST API</b> ({@code <basePath>/api/**}) becomes a stateless OAuth2
+     *       <i>resource server</i> validating bearer JWTs — configured through the standard
+     *       {@code spring.security.oauth2.resourceserver.jwt.*} properties;</li>
+     *   <li>the <b>GUI</b> ({@code <basePath>/**}) uses interactive OAuth2/OIDC
+     *       <i>login</i> — configured through the standard
+     *       {@code spring.security.oauth2.client.registration.*} properties.</li>
+     * </ul>
+     * Each chain activates only when its underlying support is configured, so an API-only or a
+     * GUI-only deployment is fine.
+     */
+    public static class Security {
+        /** Master switch for the component's own OAuth2/OIDC filter chains. */
+        private boolean enabled = false;
+
+        /**
+         * Authority required to call the REST API (e.g. {@code SCOPE_batch.admin}). When blank any
+         * authenticated bearer token is accepted.
+         */
+        private String apiAuthority;
+
+        /**
+         * Authority required to use the GUI (e.g. {@code ROLE_BATCH_ADMIN} or {@code SCOPE_openid}).
+         * When blank any authenticated OIDC user is accepted.
+         */
+        private String uiAuthority;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getApiAuthority() {
+            return apiAuthority;
+        }
+
+        public void setApiAuthority(String apiAuthority) {
+            this.apiAuthority = apiAuthority;
+        }
+
+        public String getUiAuthority() {
+            return uiAuthority;
+        }
+
+        public void setUiAuthority(String uiAuthority) {
+            this.uiAuthority = uiAuthority;
+        }
+    }
+
+    /**
+     * Pub/sub of job-lifecycle events. Enabled by default with the in-process
+     * {@link Broker#APPLICATION} publisher (Spring application events + log), so no infrastructure is
+     * required. Switch {@code broker} to {@link Broker#RABBIT} (with Spring AMQP on the classpath) to
+     * fan events out to a RabbitMQ topic exchange. Host applications may also register their own
+     * {@code BatchEventPublisher} bean to integrate any other transport.
+     */
+    public static class Events {
+
+        /** Transport used to publish lifecycle events. */
+        public enum Broker {
+            /** In-process Spring {@code ApplicationEvent} + log (default, no infrastructure). */
+            APPLICATION,
+            /** RabbitMQ topic exchange (requires Spring AMQP and a {@code RabbitTemplate}). */
+            RABBIT
+        }
+
+        /** Whether lifecycle events are published at all. */
+        private boolean enabled = true;
+
+        /** Which publisher to activate. */
+        private Broker broker = Broker.APPLICATION;
+
+        /** Target exchange name when {@code broker=rabbit}. */
+        private String exchange = "batch.admin.events";
+
+        /**
+         * Routing-key prefix when {@code broker=rabbit}; the full key is
+         * {@code <prefix>.<jobName>.<eventType>}.
+         */
+        private String routingKeyPrefix = "batch.admin";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public Broker getBroker() {
+            return broker;
+        }
+
+        public void setBroker(Broker broker) {
+            this.broker = broker;
+        }
+
+        public String getExchange() {
+            return exchange;
+        }
+
+        public void setExchange(String exchange) {
+            this.exchange = exchange;
+        }
+
+        public String getRoutingKeyPrefix() {
+            return routingKeyPrefix;
+        }
+
+        public void setRoutingKeyPrefix(String routingKeyPrefix) {
+            this.routingKeyPrefix = routingKeyPrefix;
         }
     }
 }

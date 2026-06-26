@@ -1,1 +1,2 @@
 io.batchadmin.autoconfigure.BatchAdminAutoConfiguration
+io.batchadmin.autoconfigure.BatchAdminSecurityAutoConfiguration
