@@ -8,6 +8,7 @@ import io.batchadmin.domain.JobDefinitionRecord;
 import io.batchadmin.dynamic.StepDefinition;
 import io.batchadmin.dynamic.StepProvider;
 import io.batchadmin.dynamic.TaskletProvider;
+import io.batchadmin.metadata.ValueResolver;
 import io.batchadmin.web.dto.CreateJobRequest;
 import io.batchadmin.web.dto.ProviderInfo;
 import java.util.LinkedHashMap;
@@ -50,6 +51,7 @@ public class DynamicJobService {
     private final ObjectMapper objectMapper;
     private final BatchAdminProperties properties;
     private final JobExecutionListener jobLogListener;
+    private final ValueResolver valueResolver;
 
     public DynamicJobService(JobRegistry jobRegistry,
                              JobRepository jobRepository,
@@ -59,7 +61,8 @@ public class DynamicJobService {
                              List<StepProvider> stepProviders,
                              ObjectMapper objectMapper,
                              BatchAdminProperties properties,
-                             JobExecutionListener jobLogListener) {
+                             JobExecutionListener jobLogListener,
+                             ValueResolver valueResolver) {
         this.jobRegistry = jobRegistry;
         this.jobRepository = jobRepository;
         this.transactionManager = transactionManager;
@@ -67,6 +70,7 @@ public class DynamicJobService {
         this.objectMapper = objectMapper;
         this.properties = properties;
         this.jobLogListener = jobLogListener;
+        this.valueResolver = valueResolver;
         Map<String, TaskletProvider> byType = new LinkedHashMap<>();
         for (TaskletProvider provider : providers) {
             byType.put(provider.getType().toLowerCase(), provider);
@@ -178,11 +182,14 @@ public class DynamicJobService {
     private Step buildStep(String jobName, StepDefinition definition) {
         String stepName = jobName + "." + definition.name();
         String type = definition.type().toLowerCase();
+        // Resolve any SpEL / metadata expression in the step properties (e.g. an index name from
+        // metadata) once, for both chunk-oriented step providers and tasklet providers.
+        Map<String, Object> properties = valueResolver.resolveProperties(definition.properties());
 
         StepProvider stepProvider = stepProviders.get(type);
         if (stepProvider != null) {
             try {
-                return stepProvider.buildStep(stepName, definition.properties(),
+                return stepProvider.buildStep(stepName, properties,
                         new StepProvider.Context(jobRepository, transactionManager));
             } catch (IllegalArgumentException ex) {
                 throw BatchAdminException.badRequest(ex.getMessage());
@@ -190,7 +197,7 @@ public class DynamicJobService {
         }
 
         TaskletProvider provider = providers.get(type);
-        Tasklet tasklet = provider.create(definition.properties());
+        Tasklet tasklet = provider.create(properties);
         return new StepBuilder(stepName, jobRepository)
                 .tasklet(tasklet, transactionManager)
                 .build();

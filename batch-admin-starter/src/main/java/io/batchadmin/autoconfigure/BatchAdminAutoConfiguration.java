@@ -181,6 +181,23 @@ public class BatchAdminAutoConfiguration {
     }
 
     // ----------------------------------------------------------------------------------------
+    // Metadata-driven value resolution (SpEL)
+    // ----------------------------------------------------------------------------------------
+
+    @Bean
+    @ConditionalOnMissingBean(io.batchadmin.metadata.MetadataService.class)
+    public io.batchadmin.metadata.MetadataService batchAdminMetadataService(BatchAdminProperties properties) {
+        return new io.batchadmin.metadata.PropertiesMetadataService(properties.getMetadata());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public io.batchadmin.metadata.ValueResolver batchAdminValueResolver(
+            io.batchadmin.metadata.MetadataService metadataService, BatchAdminProperties properties) {
+        return new io.batchadmin.metadata.ValueResolver(metadataService, properties.getExpressions().isEnabled());
+    }
+
+    // ----------------------------------------------------------------------------------------
     // Services
     // ----------------------------------------------------------------------------------------
 
@@ -192,9 +209,10 @@ public class BatchAdminAutoConfiguration {
                                            @org.springframework.beans.factory.annotation.Qualifier("batchAdminJobLauncher")
                                            JobLauncher jobLauncher,
                                            JobDefinitionDao jobDefinitionDao,
+                                           io.batchadmin.metadata.ValueResolver valueResolver,
                                            BatchAdminProperties properties) {
         return new JobAdminService(jobRegistry, jobExplorer, jobOperator, jobLauncher,
-                jobDefinitionDao, properties);
+                jobDefinitionDao, valueResolver, properties);
     }
 
     @Bean
@@ -207,9 +225,11 @@ public class BatchAdminAutoConfiguration {
                                                List<io.batchadmin.dynamic.StepProvider> stepProviders,
                                                ObjectMapper objectMapper,
                                                BatchAdminProperties properties,
-                                               ObjectProvider<io.batchadmin.logs.JobLogExecutionListener> logListener) {
+                                               ObjectProvider<io.batchadmin.logs.JobLogExecutionListener> logListener,
+                                               io.batchadmin.metadata.ValueResolver valueResolver) {
         return new DynamicJobService(jobRegistry, jobRepository, transactionManager, jobDefinitionDao,
-                providers, stepProviders, objectMapper, properties, logListener.getIfAvailable());
+                providers, stepProviders, objectMapper, properties, logListener.getIfAvailable(),
+                valueResolver);
     }
 
     @Bean

@@ -178,6 +178,21 @@ class BatchAdminIntegrationTest {
     }
 
     @Test
+    void resolvesMetadataAndSpelInJobParameters() {
+        // region resolves from batch.admin.metadata.region (=EU); today from the #today variable.
+        Map<String, String> params = Map.of(
+                "region", "#{metadata.get('region')}",
+                "asOfDate", "#{today}");
+        ResponseEntity<ExecutionSummary> started = rest.postForEntity(api("/jobs/sampleTestJob/executions"),
+                Map.of("parameters", params), ExecutionSummary.class);
+        assertThat(started.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+
+        Map<String, String> resolved = started.getBody().parameters();
+        assertThat(resolved).containsEntry("region", "EU");
+        assertThat(resolved.get("asOfDate")).isEqualTo(java.time.LocalDate.now().toString());
+    }
+
+    @Test
     void servesTheThymeleafGui() {
         ResponseEntity<String> dashboard = rest.getForEntity("/batch-admin", String.class);
         assertThat(dashboard.getStatusCode()).isEqualTo(HttpStatus.OK);

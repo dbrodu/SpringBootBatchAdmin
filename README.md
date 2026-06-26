@@ -147,6 +147,29 @@ never grows unbounded. The capture threshold, default read level and buffer size
 (see below). Logs below the application's effective logger level are never emitted, so to capture
 `DEBUG` you must also lower the relevant logger level. Requires Logback (the Spring Boot default).
 
+### 6. Metadata-driven parameters (SpEL)
+To fit a **metadata-driven architecture**, job parameters and dynamic-job step properties may contain
+**SpEL** expressions, resolved at launch/build time against a `MetadataService` and a few built-ins:
+
+```bash
+curl -X POST .../api/jobs/dailyReportJob/executions -H 'Content-Type: application/json' -d '{
+  "parameters": { "region": "#{metadata.get('\''region'\'')}", "asOfDate": "#{today}" } }'
+```
+
+The expression root exposes `metadata` (the `MetadataService`), `today` (`LocalDate`), `now`
+(`Instant`) and `timestamp` (`LocalDateTime`). The default `MetadataService` is backed by the
+`batch.admin.metadata.*` properties; **replace the bean to plug your real metadata source**:
+
+```java
+@Bean
+MetadataService metadataService(MyRegistry registry) {
+    return key -> registry.lookup(key);
+}
+```
+
+Evaluation uses a **sandboxed** SpEL context (property reads + instance method calls only — no type
+references or constructors) and can be disabled with `batch.admin.expressions.enabled=false`.
+
 ---
 
 ## Reusable building blocks
@@ -286,6 +309,10 @@ batch:
       default-read-level: INFO     # default minimum level when reading logs
       max-records-per-execution: 2000
       max-executions: 200          # executions kept in the in-memory log buffer
+    expressions:
+      enabled: true                # resolve SpEL in parameters / step properties
+    metadata:                      # static metadata exposed to expressions (default MetadataService)
+      region: EU
 ```
 
 ---
