@@ -133,6 +133,81 @@ never grows unbounded. The capture threshold, default read level and buffer size
 
 ---
 
+## Reusable building blocks
+
+### Generic SQL reader
+A configurable Spring Batch `ItemReader` that streams the rows of an arbitrary SQL query is shipped
+for use in your chunk-oriented steps — read each row as a `Map<String, Object>` with no mapping code,
+or map to your own type:
+
+```java
+// Rows as maps (column label -> value):
+GenericSqlItemReader<Map<String, Object>> reader = GenericSqlItemReaderBuilder.mapRows()
+        .name("ordersReader")
+        .dataSource(dataSource)
+        .sql("SELECT id, customer, amount FROM orders WHERE status = ?")
+        .parameters("NEW")
+        .fetchSize(500)
+        .build();
+
+// Or map to a type:
+GenericSqlItemReader<String> names = GenericSqlItemReaderBuilder
+        .mapWith((rs, rowNum) -> rs.getString("name"))
+        .name("names").dataSource(dataSource).sql("SELECT name FROM person ORDER BY id")
+        .build();
+```
+
+It is cursor-based (streams rows, low memory) and restartable: the query must impose a stable
+`ORDER BY` for restarts to skip already-processed rows correctly. `fetchSize`, `maxRows`,
+`queryTimeout` and `saveState` are configurable.
+
+### Paged SQL reader
+For very large result sets or restart-critical jobs, a **paged** reader queries one page at a time
+(so restart resumes cleanly at the next page). Describe the query in parts plus a sort key:
+
+```java
+GenericSqlPagingItemReader<Map<String, Object>> reader = GenericSqlPagingItemReaderBuilder.mapRows()
+        .name("ordersReader")
+        .dataSource(dataSource)
+        .select("id, customer, amount")
+        .from("orders")
+        .where("status = :status")
+        .parameter("status", "NEW")
+        .sortAsc("id")
+        .pageSize(500)
+        .build();
+```
+
+### JSON processor and a generic writer (e.g. OpenSearch)
+Together these form a **SQL → JSON → target** pipeline. `JsonItemProcessor` serializes each item to
+JSON; `GenericJsonItemWriter` writes the JSON to a pluggable `JsonDocumentSink`. A bundled
+`OpenSearchBulkJsonSink` indexes the documents into OpenSearch/Elasticsearch via the `_bulk` REST
+API using only the JDK HTTP client (no extra dependency); `LoggingJsonDocumentSink` is a dry-run
+target:
+
+```java
+Step exportToOpenSearch = new StepBuilder("export", jobRepository)
+        .<Map<String, Object>, String>chunk(500, transactionManager)
+        .reader(GenericSqlPagingItemReaderBuilder.mapRows()
+                .name("orders").dataSource(dataSource)
+                .select("*").from("orders").sortAsc("id").build())
+        .processor(new JsonItemProcessor<Map<String, Object>>())
+        .writer(new GenericJsonItemWriter(
+                OpenSearchBulkJsonSink.builder()
+                        .baseUrl("https://opensearch:9200")
+                        .index("orders")
+                        .header("Authorization", "Basic …")
+                        .idField("id")          // optional: use a JSON field as the document _id
+                        .build()))
+        .build();
+```
+
+Each chunk is sent as a single bulk request; non-2xx responses and per-document errors fail the
+step. Supply your own `HttpClient` (via `.httpClient(...)`) for custom TLS/proxy/auth. Implement
+`JsonDocumentSink` to target anything else (a file, a queue, another HTTP API).
+
+---
+
 ## GUI routes
 
 The browser GUI is served under `${batch.admin.base-path}` (default `/batch-admin`):
