@@ -219,6 +219,19 @@ public class BatchAdminAutoConfiguration {
                 jobDefinitionDao, valueResolver, properties);
     }
 
+    /** Catalog deriving reusable building blocks from the steps of the host's existing jobs. */
+    @Bean
+    @ConditionalOnMissingBean
+    public io.batchadmin.dynamic.ExistingStepCatalog existingStepCatalog(JobRegistry jobRegistry,
+                                                                         JobDefinitionDao jobDefinitionDao) {
+        // Exclude jobs the component itself created (dynamic jobs), so only the host's genuine steps
+        // become building blocks.
+        return new io.batchadmin.dynamic.ExistingStepCatalog(jobRegistry,
+                () -> jobDefinitionDao.findAll().stream()
+                        .map(io.batchadmin.domain.JobDefinitionRecord::jobName)
+                        .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new)));
+    }
+
     @Bean
     @ConditionalOnMissingBean
     public DynamicJobService dynamicJobService(JobRegistry jobRegistry,
@@ -231,10 +244,11 @@ public class BatchAdminAutoConfiguration {
                                                BatchAdminProperties properties,
                                                ObjectProvider<io.batchadmin.logs.JobLogExecutionListener> logListener,
                                                ObjectProvider<io.batchadmin.event.BatchEventPublishingListener> eventListener,
-                                               io.batchadmin.metadata.ValueResolver valueResolver) {
+                                               io.batchadmin.metadata.ValueResolver valueResolver,
+                                               io.batchadmin.dynamic.ExistingStepCatalog existingStepCatalog) {
         return new DynamicJobService(jobRegistry, jobRepository, transactionManager, jobDefinitionDao,
                 providers, stepProviders, objectMapper, properties,
-                componentJobListeners(logListener, eventListener), valueResolver);
+                componentJobListeners(logListener, eventListener), valueResolver, existingStepCatalog);
     }
 
     /** Component-owned job listeners (log capture, event publishing) attached to every job. */

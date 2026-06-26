@@ -9,6 +9,14 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+**Building blocks derived from existing jobs**
+- `ExistingStepCatalog` — automatically exposes every step of the host's already-registered jobs as a
+  reusable building block (step type `<stepName>`, or `<jobName>.<stepName>` when names collide), so a
+  new on-the-fly job can drop in a step the application already defines, with no code. Reuse shares the
+  existing step instance; dynamic (component-created) jobs are excluded. Listed at
+  `GET <base-path>/api/jobs/reusable-steps` and on the **Create job** screen. Toggle with
+  `batch.admin.dynamic-jobs.reuse-existing-steps` (default `true`).
+
 **Reusable SQL → JSON → target building blocks**
 - `GenericSqlItemReader` / `GenericSqlItemReaderBuilder` — a configurable `ItemReader` that streams the
   rows of an arbitrary SQL query as `Map<String, Object>` (or maps to your own type) with no mapping
