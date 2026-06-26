@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -85,6 +86,13 @@ public class JobController {
                                @RequestBody(required = false) CloneJobRequest request) {
         String created = dynamicJobService.cloneJob(jobName, request == null ? null : request.newName());
         return jobAdminService.getJob(created);
+    }
+
+    /** Replaces an existing dynamic job's steps/description in place (the name is fixed). */
+    @PutMapping("/{jobName}")
+    public JobSummary updateJob(@PathVariable String jobName, @RequestBody CreateJobRequest request) {
+        String name = dynamicJobService.updateJob(jobName, request);
+        return jobAdminService.getJob(name);
     }
 
     @DeleteMapping("/{jobName}")

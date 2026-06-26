@@ -47,6 +47,8 @@
               <button type="submit" class="btn btn-primary">Launch</button>
             </form>
           </details>
+          <a th:if="${job.dynamic()}" th:href="@{|${basePath}/jobs/${job.name()}/edit|}"
+             class="btn btn-small">✎ Edit</a>
           <form th:action="@{|${basePath}/jobs/${job.name()}/clone|}" method="post"
                 style="display:inline-flex; gap:4px; align-items:center">
             <input name="newName" th:value="${job.name()} + '-copy'" class="cron-input"

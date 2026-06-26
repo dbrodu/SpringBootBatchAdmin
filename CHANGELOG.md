@@ -34,6 +34,10 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Clone an existing job** in one action — `POST <base-path>/api/jobs/<name>/clone` and a *Clone*
   button on the **Jobs** screen. A dynamic job is copied definition-for-definition; a declared host job
   is cloned by reusing its whole flow.
+- **Edit a dynamic job** in place — `PUT <base-path>/api/jobs/<name>` and an *Edit* action on the
+  **Jobs** screen that reopens the composer pre-filled with the job's steps. The new composition is
+  built and validated before the old job is swapped out, so a bad edit never drops the running
+  definition. (Declared host jobs cannot be edited.)
 
 **Reusable SQL → JSON → target building blocks**
 - `GenericSqlItemReader` / `GenericSqlItemReaderBuilder` — a configurable `ItemReader` that streams the

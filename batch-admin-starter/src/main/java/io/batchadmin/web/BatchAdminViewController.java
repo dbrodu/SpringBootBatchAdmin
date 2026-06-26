@@ -120,7 +120,37 @@ public class BatchAdminViewController {
 
     @GetMapping("/jobs/new")
     public String newJob(Model model) {
-        return renderCreateJob(model, "", "", "", null);
+        return renderCreateJob(model, "", "", "", null, null);
+    }
+
+    /** Loads an existing dynamic job into the composer for editing. */
+    @GetMapping("/jobs/{jobName}/edit")
+    public String editJob(@PathVariable String jobName, Model model, RedirectAttributes redirect) {
+        try {
+            CreateJobRequest definition = dynamicJobService.getDefinition(jobName);
+            return renderCreateJob(model, definition.jobName(),
+                    definition.description() == null ? "" : definition.description(),
+                    stepsToText(definition.steps()), null, jobName);
+        } catch (BatchAdminException ex) {
+            flash(redirect, true, ex.getMessage());
+            return redirect(redirect, "/jobs");
+        }
+    }
+
+    @PostMapping("/jobs/{jobName}/edit")
+    public String updateJob(@PathVariable String jobName,
+                            @RequestParam(required = false) String description,
+                            @RequestParam(required = false) String steps,
+                            RedirectAttributes redirect) {
+        try {
+            List<StepDefinition> stepDefinitions = parseSteps(steps);
+            dynamicJobService.updateJob(jobName, new CreateJobRequest(jobName, description, stepDefinitions));
+            flash(redirect, false, "Updated job '" + jobName + "'.");
+            return redirect(redirect, "/jobs");
+        } catch (BatchAdminException | IllegalArgumentException ex) {
+            flash(redirect, true, ex.getMessage());
+            return redirect(redirect, "/jobs/" + jobName + "/edit");
+        }
     }
 
     /** Dry-run the composition and re-render the form with the expanded steps shown. */
@@ -128,20 +158,22 @@ public class BatchAdminViewController {
     public String previewJob(@RequestParam(required = false) String jobName,
                              @RequestParam(required = false) String description,
                              @RequestParam(required = false) String steps,
+                             @RequestParam(required = false) String editJobName,
                              Model model, RedirectAttributes redirect) {
         try {
             List<StepDefinition> stepDefinitions = parseSteps(steps);
             JobPreview preview = dynamicJobService.previewJob(
                     new CreateJobRequest(jobName, description, stepDefinitions));
-            return renderCreateJob(model, jobName, description, steps, preview);
+            return renderCreateJob(model, jobName, description, steps, preview, editJobName);
         } catch (BatchAdminException | IllegalArgumentException ex) {
             flash(redirect, true, ex.getMessage());
-            return redirect(redirect, "/jobs/new");
+            return redirect(redirect, editJobName == null || editJobName.isBlank()
+                    ? "/jobs/new" : "/jobs/" + editJobName + "/edit");
         }
     }
 
     private String renderCreateJob(Model model, String jobName, String description, String steps,
-                                   JobPreview preview) {
+                                   JobPreview preview, String editJobName) {
         model.addAttribute("active", "create");
         model.addAttribute("providers", dynamicJobService.listProviders());
         model.addAttribute("stepProviders", dynamicJobService.listStepProviders());
@@ -151,7 +183,24 @@ public class BatchAdminViewController {
         model.addAttribute("formDescription", description == null ? "" : description);
         model.addAttribute("formSteps", steps == null ? "" : steps);
         model.addAttribute("preview", preview);
+        model.addAttribute("editJobName", editJobName == null || editJobName.isBlank() ? null : editJobName);
         return "batch-admin/create-job";
+    }
+
+    /** Renders a job's stored step definitions back into the textarea grammar ({@code name = type (k=v)}). */
+    static String stepsToText(List<StepDefinition> steps) {
+        StringBuilder text = new StringBuilder();
+        for (StepDefinition step : steps) {
+            text.append(step.name()).append(" = ").append(step.type());
+            if (step.properties() != null && !step.properties().isEmpty()) {
+                String props = step.properties().entrySet().stream()
+                        .map(entry -> entry.getKey() + "=" + entry.getValue())
+                        .collect(java.util.stream.Collectors.joining(", "));
+                text.append(" (").append(props).append(")");
+            }
+            text.append("\n");
+        }
+        return text.toString();
     }
 
     @GetMapping("/executions")
