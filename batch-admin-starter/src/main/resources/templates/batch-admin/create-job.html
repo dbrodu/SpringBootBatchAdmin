@@ -23,13 +23,63 @@
     </label>
 
     <label class="field" style="max-width:680px">
+      <span>Quick add a building block</span>
+      <select id="block-picker">
+        <option value="">Pick a building block to append…</option>
+        <optgroup label="Tasklet steps" th:if="${not providers.isEmpty()}">
+          <option th:each="p : ${providers}" th:value="${p.type()}"
+                  th:text="${p.displayName() + ' (' + p.type() + ')'}">log</option>
+        </optgroup>
+        <optgroup label="Chunk steps" th:if="${not stepProviders.isEmpty()}">
+          <option th:each="p : ${stepProviders}" th:value="${p.type()}"
+                  th:text="${p.displayName() + ' (' + p.type() + ')'}">sql-export</option>
+        </optgroup>
+        <optgroup label="Reuse a step from an existing job" th:if="${not reusableSteps.isEmpty()}">
+          <option th:each="p : ${reusableSteps}" th:value="${p.type()}"
+                  th:text="${p.displayName() + ' (' + p.type() + ')'}">invoiceJob.extract</option>
+        </optgroup>
+        <optgroup label="Reuse a whole existing job" th:if="${not reusableJobs.isEmpty()}">
+          <option th:each="p : ${reusableJobs}" th:value="${p.type()}"
+                  th:text="${p.displayName() + ' (' + p.type() + ')'}">job:invoiceJob</option>
+        </optgroup>
+      </select>
+      <span class="hint">Appends a line to the steps below — edit the name as you like.</span>
+    </label>
+
+    <label class="field" style="max-width:680px">
       <span>Steps — one per line: <code>name = type (key=value, key2=value2)</code></span>
-      <textarea name="steps" placeholder="extract = log (message=Extracting)&#10;wait = sleep (millis=2000)&#10;done = log (message=Finished)"></textarea>
+      <textarea id="steps-input" name="steps" placeholder="extract = log (message=Extracting)&#10;wait = sleep (millis=2000)&#10;done = log (message=Finished)"></textarea>
       <span class="hint">The properties block is optional, e.g. <code>cleanup = sleep</code>.</span>
     </label>
 
     <button type="submit" class="btn btn-primary">Create job</button>
   </form>
+
+  <script th:inline="none">
+    (function () {
+      var picker = document.getElementById('block-picker');
+      var steps = document.getElementById('steps-input');
+      if (!picker) { return; }
+      if (!steps) { return; }
+      picker.addEventListener('change', function () {
+        var type = picker.value;
+        if (!type) { return; }
+        var base = type.replace(/^job:/, '').split(/[.:]/).pop().replace(/[^A-Za-z0-9]/g, '');
+        if (!base) { base = 'step'; }
+        var name = base;
+        var n = 2;
+        while (new RegExp('(^|\\n)\\s*' + name + '\\s*=', 'i').test(steps.value)) {
+          name = base + n;
+          n = n + 1;
+        }
+        var current = steps.value.replace(/\s+$/, '');
+        var line = name + ' = ' + type;
+        steps.value = (current ? current + '\n' : '') + line + '\n';
+        steps.focus();
+        picker.selectedIndex = 0;
+      });
+    })();
+  </script>
 
   <form class="panel" th:action="@{|${basePath}/jobs/sql-export|}" method="post">
     <h3>Create a SQL → target export</h3>
@@ -100,14 +150,20 @@
           <td th:text="${p.displayName()}">Reuse step 'extract' from job 'invoiceJob'</td>
           <td class="muted">— reuses the existing step as-is (no properties)</td>
         </tr>
-        <tr th:if="${providers.isEmpty() and stepProviders.isEmpty() and reusableSteps.isEmpty()}">
+        <tr th:each="p : ${reusableJobs}">
+          <td><code th:text="${p.type()}">job:invoiceJob</code></td>
+          <td th:text="${p.displayName()}">Reuse job 'invoiceJob' (3 steps, in order)</td>
+          <td class="muted">— inserts every step of the job, in order (no properties)</td>
+        </tr>
+        <tr th:if="${providers.isEmpty() and stepProviders.isEmpty() and reusableSteps.isEmpty() and reusableJobs.isEmpty()}">
           <td colspan="3" class="muted">No building blocks available.</td>
         </tr>
       </tbody>
     </table>
-    <p class="muted" th:if="${not reusableSteps.isEmpty()}" style="margin-top:.5rem">
-      Types listed as <code>job.step</code> / <code>step</code> reuse a step from one of your existing
-      jobs — drop them into a job above just like any other building block.
+    <p class="muted" th:if="${not reusableSteps.isEmpty() or not reusableJobs.isEmpty()}" style="margin-top:.5rem">
+      <code>job.step</code> / <code>step</code> reuse a single step of an existing job;
+      <code>job:&lt;name&gt;</code> reuses a whole job's flow (all its steps, in order). Use the picker
+      above to drop them in.
     </p>
   </div>
 </main>

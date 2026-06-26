@@ -116,6 +116,22 @@ public class DynamicJobService {
                 .toList();
     }
 
+    /**
+     * Building blocks that reuse a whole existing job's flow (all of its steps, in order) as a single
+     * block. Empty when {@code batch.admin.dynamic-jobs.reuse-existing-steps=false}.
+     */
+    public List<ProviderInfo> listReusableJobs() {
+        if (!properties.getDynamicJobs().isReuseExistingSteps()) {
+            return List.of();
+        }
+        return existingStepCatalog.reusableJobs().stream()
+                .map(j -> new ProviderInfo(j.type(),
+                        "Reuse job '" + j.jobName() + "' (" + j.steps().size() + " step"
+                                + (j.steps().size() == 1 ? "" : "s") + ", in order)",
+                        Map.of()))
+                .toList();
+    }
+
     public String createJob(CreateJobRequest request) {
         if (!properties.getDynamicJobs().isEnabled()) {
             throw BatchAdminException.badRequest("Dynamic job creation is disabled");
@@ -182,12 +198,14 @@ public class DynamicJobService {
             }
             String type = step.type() == null ? "" : step.type().toLowerCase();
             boolean known = providers.containsKey(type) || stepProviders.containsKey(type)
-                    || (reuseExistingSteps() && existingStepCatalog.contains(type));
+                    || (reuseExistingSteps()
+                        && (existingStepCatalog.contains(type) || existingStepCatalog.containsJob(type)));
             if (!known) {
                 Set<String> available = new java.util.TreeSet<>(providers.keySet());
                 available.addAll(stepProviders.keySet());
                 if (reuseExistingSteps()) {
                     existingStepCatalog.reusableSteps().forEach(s -> available.add(s.type()));
+                    existingStepCatalog.reusableJobs().forEach(j -> available.add(j.type()));
                 }
                 throw BatchAdminException.badRequest("Unknown step type '" + step.type()
                         + "'. Available types: " + available);
@@ -204,10 +222,33 @@ public class DynamicJobService {
         }
         SimpleJobBuilder simpleBuilder = null;
         for (StepDefinition definition : steps) {
-            Step step = buildStep(name, definition);
-            simpleBuilder = (simpleBuilder == null) ? jobBuilder.start(step) : simpleBuilder.next(step);
+            for (Step step : buildSteps(name, definition)) {
+                simpleBuilder = (simpleBuilder == null) ? jobBuilder.start(step) : simpleBuilder.next(step);
+            }
+        }
+        if (simpleBuilder == null) {
+            throw BatchAdminException.badRequest("A job needs at least one step");
         }
         return simpleBuilder.build();
+    }
+
+    /**
+     * Materializes one step definition into the step(s) it contributes: a single step for ordinary
+     * blocks, or — when the type is a {@code job:<name>} whole-job block — that job's entire ordered
+     * flow reused as-is.
+     */
+    private List<Step> buildSteps(String jobName, StepDefinition definition) {
+        String type = definition.type() == null ? "" : definition.type().toLowerCase();
+        if (reuseExistingSteps()) {
+            List<Step> flow = existingStepCatalog.findJobSteps(type);
+            if (flow != null) {
+                if (flow.isEmpty()) {
+                    throw BatchAdminException.badRequest("Reused job '" + definition.type() + "' has no steps");
+                }
+                return flow;
+            }
+        }
+        return List.of(buildStep(jobName, definition));
     }
 
     private Step buildStep(String jobName, StepDefinition definition) {

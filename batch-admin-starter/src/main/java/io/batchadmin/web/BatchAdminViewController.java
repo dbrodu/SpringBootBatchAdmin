@@ -97,6 +97,7 @@ public class BatchAdminViewController {
         model.addAttribute("providers", dynamicJobService.listProviders());
         model.addAttribute("stepProviders", dynamicJobService.listStepProviders());
         model.addAttribute("reusableSteps", dynamicJobService.listReusableSteps());
+        model.addAttribute("reusableJobs", dynamicJobService.listReusableJobs());
         return "batch-admin/create-job";
     }
 
