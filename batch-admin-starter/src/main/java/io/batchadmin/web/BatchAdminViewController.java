@@ -495,11 +495,14 @@ public class BatchAdminViewController {
     public String createTrigger(@RequestParam String sourceJob,
                                 @RequestParam String targetJob,
                                 @RequestParam(required = false) String condition,
+                                @RequestParam(required = false) String inheritParams,
+                                @RequestParam(required = false) String parameters,
                                 @RequestParam(required = false) String description,
                                 RedirectAttributes redirect) {
         try {
-            triggerService.createTrigger(
-                    new io.batchadmin.web.dto.JobTriggerRequest(sourceJob, targetJob, condition, true, description));
+            boolean inherit = inheritParams != null && !inheritParams.isBlank();
+            triggerService.createTrigger(new io.batchadmin.web.dto.JobTriggerRequest(
+                    sourceJob, targetJob, condition, true, inherit, parseParameters(parameters), description));
             flash(redirect, false, "Added trigger '" + sourceJob + "' → '" + targetJob + "'.");
         } catch (BatchAdminException ex) {
             flash(redirect, true, ex.getMessage());

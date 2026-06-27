@@ -18,6 +18,11 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A `batchAdmin.chainDepth` job parameter is threaded through each launch and **capped**
   (`batch.admin.triggers.max-chain-depth`, default 25) so cyclic or run-away chains terminate; a job
   may not trigger itself.
+- **Parameter passing between chained jobs** — a trigger can **forward the source job's parameters**
+  to the target (`inheritParams`) and/or add **static extra parameters** (which override forwarded
+  ones on a name clash), so context flows down a pipeline. The launcher's `run.id` and the chain
+  bookkeeping are not forwarded. Surfaced on the **Pipelines** form (an *inherit* checkbox + a
+  parameters box) and in the trigger payload.
 - REST: `GET/POST <base-path>/api/triggers`, `PUT …/{id}/enabled?value=`, `DELETE …/{id}`. A new
   **Pipelines** GUI screen lists, adds, enables/disables and removes triggers. Toggle the whole
   feature with `batch.admin.triggers.enabled` (default `true`). New `BATCH_ADMIN_JOB_TRIGGER` table.

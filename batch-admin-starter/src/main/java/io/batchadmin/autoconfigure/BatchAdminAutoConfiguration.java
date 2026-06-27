@@ -114,8 +114,10 @@ public class BatchAdminAutoConfiguration {
     public io.batchadmin.service.JobTriggerService jobTriggerService(
             io.batchadmin.domain.JobTriggerDao jobTriggerDao,
             JobAdminService jobAdminService,
+            ObjectMapper objectMapper,
             BatchAdminProperties properties) {
-        return new io.batchadmin.service.JobTriggerService(jobTriggerDao, jobAdminService, properties);
+        return new io.batchadmin.service.JobTriggerService(jobTriggerDao, jobAdminService,
+                objectMapper, properties);
     }
 
     /** Fires matching chaining rules when any administered job finishes; attached to every job. */

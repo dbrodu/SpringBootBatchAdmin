@@ -1,5 +1,7 @@
 package io.batchadmin.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.batchadmin.autoconfigure.BatchAdminProperties;
 import io.batchadmin.domain.JobTriggerDao;
 import io.batchadmin.domain.JobTriggerRecord;
@@ -13,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.JobExecution;
+import org.springframework.batch.core.JobParameter;
 import org.springframework.batch.core.JobParameters;
 
 /**
@@ -20,8 +23,10 @@ import org.springframework.batch.core.JobParameters;
  * target job when a source job finishes matching a {@link TriggerCondition condition}. Chains
  * (A→B→C) and fan-out (A→B, A→C) fall out naturally because every launched job is itself observed.
  *
- * <p>A {@code chainDepth} job parameter is threaded through each launch and capped
- * ({@code batch.admin.triggers.max-chain-depth}) so cyclic or runaway chains terminate.</p>
+ * <p>A trigger can forward the source job's parameters to the target and/or add static ones, so a
+ * pipeline can pass context downstream. A {@code chainDepth} job parameter is threaded through each
+ * launch and capped ({@code batch.admin.triggers.max-chain-depth}) so cyclic or runaway chains
+ * terminate.</p>
  */
 public class JobTriggerService {
 
@@ -33,17 +38,19 @@ public class JobTriggerService {
 
     private final JobTriggerDao triggerDao;
     private final JobAdminService jobAdminService;
+    private final ObjectMapper objectMapper;
     private final BatchAdminProperties properties;
 
     public JobTriggerService(JobTriggerDao triggerDao, JobAdminService jobAdminService,
-                             BatchAdminProperties properties) {
+                             ObjectMapper objectMapper, BatchAdminProperties properties) {
         this.triggerDao = triggerDao;
         this.jobAdminService = jobAdminService;
+        this.objectMapper = objectMapper;
         this.properties = properties;
     }
 
     public List<JobTriggerInfo> listTriggers() {
-        return triggerDao.findAll().stream().map(JobTriggerService::toInfo).toList();
+        return triggerDao.findAll().stream().map(this::toInfo).toList();
     }
 
     public JobTriggerInfo getTrigger(long id) {
@@ -68,8 +75,9 @@ public class JobTriggerService {
         jobAdminService.getJob(target);
         TriggerCondition condition = TriggerCondition.parse(request.condition());
         boolean enabled = request.enabled() == null || request.enabled();
+        boolean inheritParams = request.inheritParams() != null && request.inheritParams();
         JobTriggerRecord record = triggerDao.insert(source, target, condition.name(), enabled,
-                request.description());
+                inheritParams, writeParameters(request.parameters()), request.description());
         log.info("[batch-admin] Created trigger: '{}' ({}) -> '{}'", source, condition, target);
         return toInfo(record);
     }
@@ -88,7 +96,8 @@ public class JobTriggerService {
 
     /**
      * Invoked when any administered job finishes. Launches the target of every enabled, matching
-     * trigger whose source is this job, threading (and bounding) the chain depth.
+     * trigger whose source is this job, forwarding parameters (when configured) and threading (and
+     * bounding) the chain depth.
      */
     public void onJobFinished(JobExecution execution) {
         if (!properties.getTriggers().isEnabled()) {
@@ -100,7 +109,8 @@ public class JobTriggerService {
         if (triggers.isEmpty()) {
             return;
         }
-        long depth = chainDepth(execution.getJobParameters());
+        JobParameters sourceParameters = execution.getJobParameters();
+        long depth = chainDepth(sourceParameters);
         int maxDepth = properties.getTriggers().getMaxChainDepth();
         for (JobTriggerRecord trigger : triggers) {
             if (!TriggerCondition.parse(trigger.condition()).matches(status)) {
@@ -111,12 +121,19 @@ public class JobTriggerService {
                         source, trigger.targetJob(), depth, maxDepth);
                 continue;
             }
-            launch(trigger, source, depth + 1, status);
+            launch(trigger, source, sourceParameters, depth + 1, status);
         }
     }
 
-    private void launch(JobTriggerRecord trigger, String source, long depth, BatchStatus status) {
+    private void launch(JobTriggerRecord trigger, String source, JobParameters sourceParameters,
+                        long depth, BatchStatus status) {
         Map<String, String> parameters = new LinkedHashMap<>();
+        if (trigger.inheritParams()) {
+            parameters.putAll(forwardableParams(sourceParameters));
+        }
+        // Static trigger parameters override inherited ones on a key clash.
+        parameters.putAll(readParameters(trigger.parametersJson()));
+        // Chain bookkeeping is always authoritative.
         parameters.put(CHAIN_DEPTH_PARAM, String.valueOf(depth));
         parameters.put(CHAIN_SOURCE_PARAM, source);
         try {
@@ -127,6 +144,23 @@ public class JobTriggerService {
             log.error("[batch-admin] Trigger '{}' -> '{}' could not launch: {}",
                     source, trigger.targetJob(), ex.getMessage());
         }
+    }
+
+    /** The source job's parameters minus the launcher's {@code run.id} and the chain bookkeeping. */
+    private static Map<String, String> forwardableParams(JobParameters parameters) {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (parameters == null) {
+            return out;
+        }
+        for (Map.Entry<String, JobParameter<?>> entry : parameters.getParameters().entrySet()) {
+            String key = entry.getKey();
+            if (key.equals("run.id") || key.startsWith("batchAdmin.")) {
+                continue;
+            }
+            Object value = entry.getValue().getValue();
+            out.put(key, value == null ? "" : String.valueOf(value));
+        }
+        return out;
     }
 
     private static long chainDepth(JobParameters parameters) {
@@ -149,8 +183,32 @@ public class JobTriggerService {
                 .orElseThrow(() -> BatchAdminException.notFound("Unknown trigger: " + id));
     }
 
-    private static JobTriggerInfo toInfo(JobTriggerRecord record) {
+    private JobTriggerInfo toInfo(JobTriggerRecord record) {
         return new JobTriggerInfo(record.id(), record.sourceJob(), record.targetJob(),
-                record.condition(), record.enabled(), record.description(), record.createdAt());
+                record.condition(), record.enabled(), record.inheritParams(),
+                readParameters(record.parametersJson()), record.description(), record.createdAt());
+    }
+
+    private String writeParameters(Map<String, String> parameters) {
+        if (parameters == null || parameters.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(parameters);
+        } catch (Exception ex) {
+            throw new BatchAdminException(BatchAdminException.Kind.INTERNAL, "Cannot serialize parameters", ex);
+        }
+    }
+
+    private Map<String, String> readParameters(String json) {
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<Map<String, String>>() {
+            });
+        } catch (Exception ex) {
+            return Map.of();
+        }
     }
 }
