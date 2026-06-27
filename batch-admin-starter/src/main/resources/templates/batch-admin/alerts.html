@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{batch-admin/fragments :: head('Batch Admin — Alerts')}"></head>
+<body>
+<header th:replace="~{batch-admin/fragments :: nav('alerts')}"></header>
+<main class="app-main">
+  <div th:replace="~{batch-admin/fragments :: banner}"></div>
+
+  <form class="panel" th:action="@{|${basePath}/alerts|}" method="post">
+    <h3>Add an alert rule</h3>
+    <p class="muted">Get notified when a job <strong>fails</strong> or <strong>overruns</strong> an SLA.
+      Alerts are delivered to the application log or to a webhook URL (Slack/Teams/any HTTP receiver).</p>
+    <div class="inline-form">
+      <select name="jobName" required>
+        <option value="*">Any job</option>
+        <option th:each="j : ${jobs}" th:value="${j.name()}" th:text="${j.name()}">job</option>
+      </select>
+      <select name="ruleType">
+        <option value="FAILURE">on failure</option>
+        <option value="DURATION">on overrun (SLA)</option>
+      </select>
+      <input name="thresholdMillis" type="number" min="1" placeholder="SLA ms (overrun only)"
+             style="max-width:170px"/>
+      <select name="channel">
+        <option value="LOG">→ log</option>
+        <option value="WEBHOOK">→ webhook</option>
+      </select>
+      <input name="target" placeholder="webhook URL (for webhook)" style="max-width:280px"/>
+      <input name="description" placeholder="description (optional)"/>
+      <button type="submit" class="btn btn-primary">Add rule</button>
+    </div>
+    <span class="hint">An <em>overrun</em> rule needs an SLA threshold in milliseconds; a
+      <em>webhook</em> rule needs a target URL.</span>
+  </form>
+
+  <table class="grid">
+    <thead>
+      <tr><th>Job</th><th>When</th><th>SLA</th><th>Channel</th><th>Target</th><th>Description</th>
+        <th>Enabled</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      <tr th:each="r : ${rules}">
+        <td><code th:text="${r.jobName()}">*</code></td>
+        <td><span class="tag" th:text="${r.ruleType()}">FAILURE</span></td>
+        <td class="muted" th:text="${r.thresholdMillis() != null ? r.thresholdMillis() + ' ms' : '—'}">—</td>
+        <td><span class="tag" th:text="${r.channel()}">LOG</span></td>
+        <td class="muted" th:text="${r.target() != null and !r.target().isEmpty() ? r.target() : '—'}">—</td>
+        <td class="muted" th:text="${r.description() != null ? r.description() : '—'}">—</td>
+        <td>
+          <span class="badge" th:classappend="${r.enabled()} ? 'badge-ok' : 'badge-idle'"
+                th:text="${r.enabled()} ? 'on' : 'off'">on</span>
+        </td>
+        <td class="actions">
+          <form th:action="@{|${basePath}/alerts/${r.id()}/test|}" method="post" style="display:inline">
+            <button type="submit" class="btn btn-small">Test</button>
+          </form>
+          <form th:action="@{|${basePath}/alerts/${r.id()}/toggle|}" method="post" style="display:inline">
+            <button type="submit" class="btn btn-small" th:text="${r.enabled()} ? 'Disable' : 'Enable'">Disable</button>
+          </form>
+          <form th:action="@{|${basePath}/alerts/${r.id()}/delete|}" method="post"
+                onsubmit="return confirm('Delete this rule?');" style="display:inline">
+            <button type="submit" class="btn btn-small btn-danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+      <tr th:if="${rules.isEmpty()}"><td colspan="8" class="muted">No alert rules defined.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="panel" style="margin-top:18px">
+    <h4>Recent alerts</h4>
+    <table class="grid">
+      <thead><tr><th>When</th><th>Job</th><th>Type</th><th>Channel</th><th>Message</th></tr></thead>
+      <tbody>
+        <tr th:each="a : ${recent}">
+          <td th:text="${@batchAdminFormat.date(a.timestamp())}">—</td>
+          <td><code th:text="${a.jobName()}">job</code></td>
+          <td><span class="tag" th:text="${a.ruleType()}">FAILURE</span></td>
+          <td class="muted" th:text="${a.channel()}">LOG</td>
+          <td class="muted" th:text="${a.message()}">message</td>
+        </tr>
+        <tr th:if="${recent.isEmpty()}"><td colspan="5" class="muted">No alerts fired yet.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+<footer th:replace="~{batch-admin/fragments :: footer}"></footer>
+</body>
+</html>

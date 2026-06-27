@@ -2,17 +2,21 @@ package io.batchadmin.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.batchadmin.autoconfigure.BatchAdminProperties;
 import io.batchadmin.domain.JobScheduleDao;
 import io.batchadmin.domain.JobScheduleRecord;
+import io.batchadmin.domain.ScheduleLockDao;
 import io.batchadmin.schedule.NaturalCronParser;
 import io.batchadmin.web.dto.ScheduleInfo;
 import io.batchadmin.web.dto.ScheduleRequest;
 import io.batchadmin.web.dto.StartJobRequest;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import org.slf4j.Logger;
@@ -29,21 +33,31 @@ public class JobSchedulingService {
 
     private static final Logger log = LoggerFactory.getLogger(JobSchedulingService.class);
 
+    /** Claim rows older than this are purged opportunistically; they only need to outlive a fire. */
+    private static final Duration LOCK_RETENTION = Duration.ofHours(24);
+
     private final TaskScheduler taskScheduler;
     private final JobScheduleDao scheduleDao;
     private final JobAdminService jobAdminService;
     private final ObjectMapper objectMapper;
+    private final ScheduleLockDao scheduleLockDao;
+    private final BatchAdminProperties properties;
+    private final String instanceId = UUID.randomUUID().toString();
     private final NaturalCronParser cronParser = new NaturalCronParser();
     private final Map<Long, ScheduledFuture<?>> armed = new ConcurrentHashMap<>();
 
     public JobSchedulingService(TaskScheduler taskScheduler,
                                 JobScheduleDao scheduleDao,
                                 JobAdminService jobAdminService,
-                                ObjectMapper objectMapper) {
+                                ObjectMapper objectMapper,
+                                ScheduleLockDao scheduleLockDao,
+                                BatchAdminProperties properties) {
         this.taskScheduler = taskScheduler;
         this.scheduleDao = scheduleDao;
         this.jobAdminService = jobAdminService;
         this.objectMapper = objectMapper;
+        this.scheduleLockDao = scheduleLockDao;
+        this.properties = properties;
     }
 
     public List<ScheduleInfo> listSchedules() {
@@ -112,8 +126,12 @@ public class JobSchedulingService {
         }
         Map<String, String> parameters = readParameters(record.parametersJson());
         String jobName = record.jobName();
+        long scheduleId = record.id();
         Runnable task = () -> {
             try {
+                if (!claimFire(scheduleId)) {
+                    return; // another instance is launching this fire
+                }
                 jobAdminService.startJob(jobName, new StartJobRequest(parameters));
             } catch (RuntimeException ex) {
                 log.error("[batch-admin] Scheduled launch of '{}' failed: {}", jobName, ex.getMessage());
@@ -123,6 +141,31 @@ public class JobSchedulingService {
         if (future != null) {
             armed.put(record.id(), future);
         }
+    }
+
+    /**
+     * Cluster-safe gate: when enabled, claims this fire through the shared JDBC lock so exactly one
+     * instance launches it. Keyed by the schedule and the current whole second (all instances fire
+     * within the same cron second, so they contend for the same key). A no-op (always wins) when
+     * cluster-safe scheduling is off.
+     */
+    private boolean claimFire(long scheduleId) {
+        if (!properties.getScheduling().isClusterSafe()) {
+            return true;
+        }
+        long fireSecond = Instant.now().getEpochSecond();
+        boolean won = scheduleLockDao.tryClaim(scheduleId, fireSecond, instanceId);
+        if (won) {
+            try {
+                scheduleLockDao.purgeOlderThan(Instant.now().minus(LOCK_RETENTION));
+            } catch (RuntimeException ignored) {
+                // cleanup is best-effort
+            }
+        } else {
+            log.debug("[batch-admin] Schedule {} fire at {} already claimed by another instance",
+                    scheduleId, fireSecond);
+        }
+        return won;
     }
 
     private void cancel(Long id) {

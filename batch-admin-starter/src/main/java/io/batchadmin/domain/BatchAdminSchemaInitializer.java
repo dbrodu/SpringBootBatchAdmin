@@ -67,6 +67,46 @@ public class BatchAdminSchemaInitializer {
                     CREATED_AT TIMESTAMP NOT NULL
                 )""".formatted(identity, textType));
 
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS BATCH_ADMIN_JOB_TRIGGER (
+                    ID %s PRIMARY KEY,
+                    SOURCE_JOB VARCHAR(200) NOT NULL,
+                    TARGET_JOB VARCHAR(200) NOT NULL,
+                    CONDITION_TYPE VARCHAR(20) NOT NULL,
+                    ENABLED BOOLEAN NOT NULL,
+                    INHERIT_PARAMS BOOLEAN DEFAULT FALSE NOT NULL,
+                    PARAMETERS_JSON VARCHAR(2000),
+                    DESCRIPTION VARCHAR(1000),
+                    CREATED_AT TIMESTAMP NOT NULL
+                )""".formatted(identity));
+
+        // Parameter-passing columns were added after the trigger table shipped: add them to
+        // pre-existing tables (no-op when the table was just created above).
+        addColumnIfMissing("BATCH_ADMIN_JOB_TRIGGER", "INHERIT_PARAMS", "BOOLEAN DEFAULT FALSE NOT NULL");
+        addColumnIfMissing("BATCH_ADMIN_JOB_TRIGGER", "PARAMETERS_JSON", "VARCHAR(2000)");
+
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS BATCH_ADMIN_SCHEDULE_LOCK (
+                    SCHEDULE_ID BIGINT NOT NULL,
+                    FIRE_SECOND BIGINT NOT NULL,
+                    INSTANCE_ID VARCHAR(200),
+                    CLAIMED_AT TIMESTAMP NOT NULL,
+                    PRIMARY KEY (SCHEDULE_ID, FIRE_SECOND)
+                )""");
+
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS BATCH_ADMIN_ALERT_RULE (
+                    ID %s PRIMARY KEY,
+                    JOB_NAME VARCHAR(200) NOT NULL,
+                    RULE_TYPE VARCHAR(20) NOT NULL,
+                    THRESHOLD_MILLIS BIGINT,
+                    CHANNEL VARCHAR(20) NOT NULL,
+                    TARGET VARCHAR(1000),
+                    ENABLED BOOLEAN NOT NULL,
+                    DESCRIPTION VARCHAR(1000),
+                    CREATED_AT TIMESTAMP NOT NULL
+                )""".formatted(identity));
+
         log.info("[batch-admin] Schema ready (database: {})", product.isBlank() ? "unknown" : product);
     }
 

@@ -9,6 +9,52 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+**Cluster-safe scheduling**
+- When several application instances share one database, each instance re-arms the same schedules and
+  would fire every job N times. Enable `batch.admin.scheduling.cluster-safe` (default `false`) to gate
+  each fire behind a shared JDBC lock (`BATCH_ADMIN_SCHEDULE_LOCK`, keyed by schedule + fire second):
+  exactly one instance wins the claim and launches the job; the others skip. Single-instance behaviour
+  is unchanged. Assumes the instances' clocks are roughly in sync (NTP); old lock rows are purged
+  opportunistically.
+
+**Failure / SLA alerting**
+- **Get notified when a job fails or overruns** — persisted alert rules raise an alert when a matching
+  job finishes in a failure status (`FAILURE`) or exceeds an SLA duration threshold (`DURATION`). A rule
+  targets a specific job or every job (`*`).
+- Alerts are delivered through **pluggable channels** — `LOG` (always on) and `WEBHOOK` (POSTs the
+  alert as JSON, for Slack/Teams/any HTTP receiver) ship in the box; host apps can register an
+  `AlertChannel` bean for other transports (email, PagerDuty, …). Delivery failures never break the
+  observed job. The most recently fired alerts are kept in memory for the GUI/API.
+- REST: `GET/POST <base-path>/api/alerts`, `GET …/recent`, `PUT …/{id}/enabled?value=`,
+  `POST …/{id}/test` (send a synthetic alert to verify a channel), `DELETE …/{id}`. A new **Alerts**
+  GUI screen manages rules and shows recent alerts. Toggle with `batch.admin.alerts.enabled`
+  (default `true`). New `BATCH_ADMIN_ALERT_RULE` table.
+
+**Job pipelines / chaining (event-driven)**
+- **Trigger one job from another** — define rules that launch a target job when a source job finishes
+  matching a condition (`SUCCESS` / `FAILURE` / `ANY`). Chains (A→B→C) and fan-out (A→B, A→C) fall out
+  naturally because every launched job is itself observed — the Spring Cloud Data Flow *composed-task*
+  capability, embedded. Triggers fire through a job listener attached to every administered job (host
+  and dynamic), so they work regardless of the configured event publisher.
+- A `batchAdmin.chainDepth` job parameter is threaded through each launch and **capped**
+  (`batch.admin.triggers.max-chain-depth`, default 25) so cyclic or run-away chains terminate; a job
+  may not trigger itself.
+- **Parameter passing between chained jobs** — a trigger can **forward the source job's parameters**
+  to the target (`inheritParams`) and/or add **static extra parameters** (which override forwarded
+  ones on a name clash), so context flows down a pipeline. The launcher's `run.id` and the chain
+  bookkeeping are not forwarded. Surfaced on the **Pipelines** form (an *inherit* checkbox + a
+  parameters box) and in the trigger payload.
+- REST: `GET/POST <base-path>/api/triggers`, `PUT …/{id}/enabled?value=`, `DELETE …/{id}`. A new
+  **Pipelines** GUI screen lists, adds, enables/disables and removes triggers. Toggle the whole
+  feature with `batch.admin.triggers.enabled` (default `true`). New `BATCH_ADMIN_JOB_TRIGGER` table.
+- **Visual pipeline graph** — `GET <base-path>/api/triggers/graph` returns the trigger graph laid out
+  (jobs as nodes, triggers as directed edges) with a longest-path layering, and a new *Pipeline graph*
+  GUI screen (linked from **Pipelines**) draws it as an inline SVG — arrows source→target labelled with
+  the condition, disabled triggers dashed. No client-side layout library.
+- **Cascade cleanup of triggers** — deleting a dynamic job now also removes any triggers referencing it
+  (as source or target), so the pipeline never keeps dangling rules pointing at a job that no longer
+  exists. Overwriting a job through import keeps its triggers (the name is unchanged).
+
 **Building blocks derived from existing jobs**
 - `ExistingStepCatalog` — automatically exposes the host's already-registered jobs as reusable
   building blocks, at two granularities: each **step** (type `<stepName>`, or `<jobName>.<stepName>`

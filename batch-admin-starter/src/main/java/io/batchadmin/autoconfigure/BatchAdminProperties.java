@@ -52,6 +52,12 @@ public class BatchAdminProperties {
     /** Pub/sub job-lifecycle events sub-configuration. */
     private final Events events = new Events();
 
+    /** Event-driven job chaining (run a job when another finishes). */
+    private final Triggers triggers = new Triggers();
+
+    /** Failure / SLA alerting (notify when a job fails or overruns). */
+    private final Alerts alerts = new Alerts();
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -108,6 +114,14 @@ public class BatchAdminProperties {
         return events;
     }
 
+    public Triggers getTriggers() {
+        return triggers;
+    }
+
+    public Alerts getAlerts() {
+        return alerts;
+    }
+
     /** The API path is always the base path suffixed with {@code /api}. */
     public String getApiPath() {
         return basePath + "/api";
@@ -127,11 +141,67 @@ public class BatchAdminProperties {
         return p;
     }
 
+    public static class Alerts {
+        /** Whether failure / SLA alerting is enabled. */
+        private boolean enabled = true;
+        /** How many recently fired alerts to keep in memory for the GUI/API. */
+        private int recentBufferSize = 100;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public int getRecentBufferSize() {
+            return recentBufferSize;
+        }
+
+        public void setRecentBufferSize(int recentBufferSize) {
+            this.recentBufferSize = recentBufferSize;
+        }
+    }
+
+    public static class Triggers {
+        /** Whether event-driven job chaining (run a job when another finishes) is enabled. */
+        private boolean enabled = true;
+        /**
+         * Safety cap on how deep a trigger chain may go (A→B→C→…), to bound run-away or cyclic
+         * chains. A launch beyond this depth is skipped and logged.
+         */
+        private int maxChainDepth = 25;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public int getMaxChainDepth() {
+            return maxChainDepth;
+        }
+
+        public void setMaxChainDepth(int maxChainDepth) {
+            this.maxChainDepth = maxChainDepth;
+        }
+    }
+
     public static class Scheduling {
         /** Whether cron scheduling of jobs is enabled. */
         private boolean enabled = true;
         /** Size of the thread pool backing the scheduler. */
         private int poolSize = 4;
+        /**
+         * When several application instances share one database, every instance re-arms the same
+         * schedules and would fire each one N times. Enable this to gate each fire behind a shared
+         * JDBC lock so exactly one instance launches the job. Off by default (single-instance
+         * behaviour is unchanged); assumes the instances' clocks are roughly in sync (NTP).
+         */
+        private boolean clusterSafe = false;
 
         public boolean isEnabled() {
             return enabled;
@@ -147,6 +217,14 @@ public class BatchAdminProperties {
 
         public void setPoolSize(int poolSize) {
             this.poolSize = poolSize;
+        }
+
+        public boolean isClusterSafe() {
+            return clusterSafe;
+        }
+
+        public void setClusterSafe(boolean clusterSafe) {
+            this.clusterSafe = clusterSafe;
         }
     }
 

@@ -102,6 +102,75 @@ public class BatchAdminAutoConfiguration {
         return new JobScheduleDao(dataSource);
     }
 
+    @Bean
+    @ConditionalOnMissingBean
+    public io.batchadmin.domain.ScheduleLockDao scheduleLockDao(DataSource dataSource,
+                                                                BatchAdminSchemaInitializer schemaInitializer) {
+        return new io.batchadmin.domain.ScheduleLockDao(dataSource);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public io.batchadmin.domain.JobTriggerDao jobTriggerDao(DataSource dataSource,
+                                                            BatchAdminSchemaInitializer schemaInitializer) {
+        return new io.batchadmin.domain.JobTriggerDao(dataSource);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public io.batchadmin.service.JobTriggerService jobTriggerService(
+            io.batchadmin.domain.JobTriggerDao jobTriggerDao,
+            JobAdminService jobAdminService,
+            ObjectMapper objectMapper,
+            BatchAdminProperties properties) {
+        return new io.batchadmin.service.JobTriggerService(jobTriggerDao, jobAdminService,
+                objectMapper, properties);
+    }
+
+    /** Fires matching chaining rules when any administered job finishes; attached to every job. */
+    @Bean
+    @ConditionalOnMissingBean
+    public io.batchadmin.service.JobTriggerFiringListener jobTriggerFiringListener(
+            io.batchadmin.service.JobTriggerService jobTriggerService) {
+        return new io.batchadmin.service.JobTriggerFiringListener(jobTriggerService);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public io.batchadmin.domain.AlertRuleDao alertRuleDao(DataSource dataSource,
+                                                          BatchAdminSchemaInitializer schemaInitializer) {
+        return new io.batchadmin.domain.AlertRuleDao(dataSource);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(name = "logAlertChannel")
+    public io.batchadmin.service.AlertChannel logAlertChannel() {
+        return new io.batchadmin.service.LogAlertChannel();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(name = "webhookAlertChannel")
+    public io.batchadmin.service.AlertChannel webhookAlertChannel(ObjectMapper objectMapper) {
+        return new io.batchadmin.service.WebhookAlertChannel(objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public io.batchadmin.service.AlertService alertService(
+            io.batchadmin.domain.AlertRuleDao alertRuleDao,
+            List<io.batchadmin.service.AlertChannel> alertChannels,
+            BatchAdminProperties properties) {
+        return new io.batchadmin.service.AlertService(alertRuleDao, alertChannels, properties);
+    }
+
+    /** Fires matching failure/SLA rules when any administered job finishes; attached to every job. */
+    @Bean
+    @ConditionalOnMissingBean
+    public io.batchadmin.service.JobAlertListener jobAlertListener(
+            io.batchadmin.service.AlertService alertService) {
+        return new io.batchadmin.service.JobAlertListener(alertService);
+    }
+
     // ----------------------------------------------------------------------------------------
     // Batch launch / operate infrastructure
     // ----------------------------------------------------------------------------------------
@@ -143,9 +212,11 @@ public class BatchAdminAutoConfiguration {
             JobRegistry jobRegistry,
             ObjectProvider<Job> jobs,
             ObjectProvider<io.batchadmin.logs.JobLogExecutionListener> logListener,
-            ObjectProvider<io.batchadmin.event.BatchEventPublishingListener> eventListener) {
+            ObjectProvider<io.batchadmin.event.BatchEventPublishingListener> eventListener,
+            ObjectProvider<io.batchadmin.service.JobTriggerFiringListener> triggerListener,
+            ObjectProvider<io.batchadmin.service.JobAlertListener> alertListener) {
         List<org.springframework.batch.core.JobExecutionListener> listeners =
-                componentJobListeners(logListener, eventListener);
+                componentJobListeners(logListener, eventListener, triggerListener, alertListener);
         return () -> jobs.forEach(job -> {
             if (!listeners.isEmpty()
                     && job instanceof org.springframework.batch.core.job.AbstractJob abstractJob) {
@@ -252,18 +323,24 @@ public class BatchAdminAutoConfiguration {
                                                BatchAdminProperties properties,
                                                ObjectProvider<io.batchadmin.logs.JobLogExecutionListener> logListener,
                                                ObjectProvider<io.batchadmin.event.BatchEventPublishingListener> eventListener,
+                                               ObjectProvider<io.batchadmin.service.JobTriggerFiringListener> triggerListener,
+                                               ObjectProvider<io.batchadmin.service.JobAlertListener> alertListener,
+                                               io.batchadmin.service.JobTriggerService jobTriggerService,
                                                io.batchadmin.metadata.ValueResolver valueResolver,
                                                io.batchadmin.dynamic.ExistingStepCatalog existingStepCatalog) {
         return new DynamicJobService(jobRegistry, jobRepository, transactionManager, jobDefinitionDao,
                 jobDefinitionVersionDao, providers, stepProviders, objectMapper, properties,
-                componentJobListeners(logListener, eventListener), valueResolver, existingStepCatalog);
+                componentJobListeners(logListener, eventListener, triggerListener, alertListener),
+                valueResolver, existingStepCatalog, jobTriggerService);
     }
 
-    /** Component-owned job listeners (log capture, event publishing) attached to every job. */
+    /** Component-owned job listeners (log capture, events, trigger firing, alerting) on every job. */
     private static List<org.springframework.batch.core.JobExecutionListener> componentJobListeners(
             ObjectProvider<io.batchadmin.logs.JobLogExecutionListener> logListener,
-            ObjectProvider<io.batchadmin.event.BatchEventPublishingListener> eventListener) {
-        List<org.springframework.batch.core.JobExecutionListener> listeners = new java.util.ArrayList<>(2);
+            ObjectProvider<io.batchadmin.event.BatchEventPublishingListener> eventListener,
+            ObjectProvider<io.batchadmin.service.JobTriggerFiringListener> triggerListener,
+            ObjectProvider<io.batchadmin.service.JobAlertListener> alertListener) {
+        List<org.springframework.batch.core.JobExecutionListener> listeners = new java.util.ArrayList<>(4);
         org.springframework.batch.core.JobExecutionListener log = logListener.getIfAvailable();
         if (log != null) {
             listeners.add(log);
@@ -271,6 +348,14 @@ public class BatchAdminAutoConfiguration {
         org.springframework.batch.core.JobExecutionListener events = eventListener.getIfAvailable();
         if (events != null) {
             listeners.add(events);
+        }
+        org.springframework.batch.core.JobExecutionListener triggers = triggerListener.getIfAvailable();
+        if (triggers != null) {
+            listeners.add(triggers);
+        }
+        org.springframework.batch.core.JobExecutionListener alerts = alertListener.getIfAvailable();
+        if (alerts != null) {
+            listeners.add(alerts);
         }
         return listeners;
     }
@@ -327,8 +412,11 @@ public class BatchAdminAutoConfiguration {
                 TaskScheduler taskScheduler,
                 JobScheduleDao jobScheduleDao,
                 JobAdminService jobAdminService,
-                ObjectMapper objectMapper) {
-            return new JobSchedulingService(taskScheduler, jobScheduleDao, jobAdminService, objectMapper);
+                ObjectMapper objectMapper,
+                io.batchadmin.domain.ScheduleLockDao scheduleLockDao,
+                BatchAdminProperties properties) {
+            return new JobSchedulingService(taskScheduler, jobScheduleDao, jobAdminService, objectMapper,
+                    scheduleLockDao, properties);
         }
 
         /**
@@ -355,6 +443,18 @@ public class BatchAdminAutoConfiguration {
         public JobController batchAdminJobController(JobAdminService jobAdminService,
                                                      DynamicJobService dynamicJobService) {
             return new JobController(jobAdminService, dynamicJobService);
+        }
+
+        @Bean
+        public io.batchadmin.web.TriggerController batchAdminTriggerController(
+                io.batchadmin.service.JobTriggerService jobTriggerService) {
+            return new io.batchadmin.web.TriggerController(jobTriggerService);
+        }
+
+        @Bean
+        public io.batchadmin.web.AlertController batchAdminAlertController(
+                io.batchadmin.service.AlertService alertService) {
+            return new io.batchadmin.web.AlertController(alertService);
         }
 
         @Bean
@@ -389,9 +489,11 @@ public class BatchAdminAutoConfiguration {
                 ObservabilityService observabilityService,
                 org.springframework.beans.factory.ObjectProvider<JobSchedulingService> schedulingService,
                 org.springframework.beans.factory.ObjectProvider<io.batchadmin.service.JobLogService> jobLogService,
+                io.batchadmin.service.JobTriggerService jobTriggerService,
+                io.batchadmin.service.AlertService alertService,
                 BatchAdminProperties properties) {
             return new BatchAdminViewController(jobAdminService, dynamicJobService, observabilityService,
-                    schedulingService, jobLogService, properties);
+                    schedulingService, jobLogService, jobTriggerService, alertService, properties);
         }
     }
 

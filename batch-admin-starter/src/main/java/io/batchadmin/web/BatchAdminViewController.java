@@ -2,11 +2,13 @@ package io.batchadmin.web;
 
 import io.batchadmin.autoconfigure.BatchAdminProperties;
 import io.batchadmin.dynamic.StepDefinition;
+import io.batchadmin.service.AlertService;
 import io.batchadmin.service.BatchAdminException;
 import io.batchadmin.service.DynamicJobService;
 import io.batchadmin.service.JobAdminService;
 import io.batchadmin.service.JobLogService;
 import io.batchadmin.service.JobSchedulingService;
+import io.batchadmin.service.JobTriggerService;
 import io.batchadmin.service.ObservabilityService;
 import io.batchadmin.web.dto.CreateJobRequest;
 import io.batchadmin.web.dto.ImportResult;
@@ -53,6 +55,8 @@ public class BatchAdminViewController {
     private final ObservabilityService observabilityService;
     private final ObjectProvider<JobSchedulingService> schedulingService;
     private final ObjectProvider<JobLogService> jobLogService;
+    private final JobTriggerService triggerService;
+    private final AlertService alertService;
     private final String basePath;
 
     public BatchAdminViewController(JobAdminService jobAdminService,
@@ -60,12 +64,16 @@ public class BatchAdminViewController {
                                     ObservabilityService observabilityService,
                                     ObjectProvider<JobSchedulingService> schedulingService,
                                     ObjectProvider<JobLogService> jobLogService,
+                                    JobTriggerService triggerService,
+                                    AlertService alertService,
                                     BatchAdminProperties properties) {
         this.jobAdminService = jobAdminService;
         this.dynamicJobService = dynamicJobService;
         this.observabilityService = observabilityService;
         this.schedulingService = schedulingService;
         this.jobLogService = jobLogService;
+        this.triggerService = triggerService;
+        this.alertService = alertService;
         this.basePath = properties.getBasePath();
     }
 
@@ -238,6 +246,21 @@ public class BatchAdminViewController {
         model.addAttribute("schedules", scheduling != null ? scheduling.listSchedules() : List.of());
         model.addAttribute("jobs", jobAdminService.listJobs().stream().filter(j -> j.launchable()).toList());
         return "batch-admin/schedules";
+    }
+
+    @GetMapping("/pipelines")
+    public String pipelines(Model model) {
+        model.addAttribute("active", "pipelines");
+        model.addAttribute("triggers", triggerService.listTriggers());
+        model.addAttribute("jobs", jobAdminService.listJobs());
+        return "batch-admin/pipelines";
+    }
+
+    @GetMapping("/pipelines/graph")
+    public String pipelineGraph(Model model) {
+        model.addAttribute("active", "pipelines");
+        model.addAttribute("graph", triggerService.buildGraph());
+        return "batch-admin/job-graph";
     }
 
     // ----------------------------------------------------------------------------------------
@@ -477,6 +500,105 @@ public class BatchAdminViewController {
             }
         }
         return redirect(redirect, "/schedules");
+    }
+
+    @PostMapping("/pipelines")
+    public String createTrigger(@RequestParam String sourceJob,
+                                @RequestParam String targetJob,
+                                @RequestParam(required = false) String condition,
+                                @RequestParam(required = false) String inheritParams,
+                                @RequestParam(required = false) String parameters,
+                                @RequestParam(required = false) String description,
+                                RedirectAttributes redirect) {
+        try {
+            boolean inherit = inheritParams != null && !inheritParams.isBlank();
+            triggerService.createTrigger(new io.batchadmin.web.dto.JobTriggerRequest(
+                    sourceJob, targetJob, condition, true, inherit, parseParameters(parameters), description));
+            flash(redirect, false, "Added trigger '" + sourceJob + "' → '" + targetJob + "'.");
+        } catch (BatchAdminException ex) {
+            flash(redirect, true, ex.getMessage());
+        }
+        return redirect(redirect, "/pipelines");
+    }
+
+    @PostMapping("/pipelines/{id}/toggle")
+    public String toggleTrigger(@PathVariable long id, RedirectAttributes redirect) {
+        try {
+            triggerService.setEnabled(id, !triggerService.getTrigger(id).enabled());
+        } catch (BatchAdminException ex) {
+            flash(redirect, true, ex.getMessage());
+        }
+        return redirect(redirect, "/pipelines");
+    }
+
+    @PostMapping("/pipelines/{id}/delete")
+    public String deleteTrigger(@PathVariable long id, RedirectAttributes redirect) {
+        try {
+            triggerService.deleteTrigger(id);
+            flash(redirect, false, "Removed trigger #" + id + ".");
+        } catch (BatchAdminException ex) {
+            flash(redirect, true, ex.getMessage());
+        }
+        return redirect(redirect, "/pipelines");
+    }
+
+    @GetMapping("/alerts")
+    public String alerts(Model model) {
+        model.addAttribute("active", "alerts");
+        model.addAttribute("rules", alertService.listRules());
+        model.addAttribute("recent", alertService.recentAlerts());
+        model.addAttribute("jobs", jobAdminService.listJobs());
+        return "batch-admin/alerts";
+    }
+
+    @PostMapping("/alerts")
+    public String createAlertRule(@RequestParam String jobName,
+                                  @RequestParam(required = false) String ruleType,
+                                  @RequestParam(required = false) Long thresholdMillis,
+                                  @RequestParam(required = false) String channel,
+                                  @RequestParam(required = false) String target,
+                                  @RequestParam(required = false) String description,
+                                  RedirectAttributes redirect) {
+        try {
+            alertService.createRule(new io.batchadmin.web.dto.AlertRuleRequest(
+                    jobName, ruleType, thresholdMillis, channel, target, true, description));
+            flash(redirect, false, "Added alert rule.");
+        } catch (BatchAdminException ex) {
+            flash(redirect, true, ex.getMessage());
+        }
+        return redirect(redirect, "/alerts");
+    }
+
+    @PostMapping("/alerts/{id}/toggle")
+    public String toggleAlertRule(@PathVariable long id, RedirectAttributes redirect) {
+        try {
+            alertService.setEnabled(id, !alertService.getRule(id).enabled());
+        } catch (BatchAdminException ex) {
+            flash(redirect, true, ex.getMessage());
+        }
+        return redirect(redirect, "/alerts");
+    }
+
+    @PostMapping("/alerts/{id}/test")
+    public String testAlertRule(@PathVariable long id, RedirectAttributes redirect) {
+        try {
+            alertService.sendTest(id);
+            flash(redirect, false, "Sent a test alert for rule #" + id + ".");
+        } catch (BatchAdminException ex) {
+            flash(redirect, true, ex.getMessage());
+        }
+        return redirect(redirect, "/alerts");
+    }
+
+    @PostMapping("/alerts/{id}/delete")
+    public String deleteAlertRule(@PathVariable long id, RedirectAttributes redirect) {
+        try {
+            alertService.deleteRule(id);
+            flash(redirect, false, "Removed alert rule #" + id + ".");
+        } catch (BatchAdminException ex) {
+            flash(redirect, true, ex.getMessage());
+        }
+        return redirect(redirect, "/alerts");
     }
 
     // ----------------------------------------------------------------------------------------
