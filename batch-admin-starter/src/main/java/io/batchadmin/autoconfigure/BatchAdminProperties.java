@@ -195,6 +195,13 @@ public class BatchAdminProperties {
         private boolean enabled = true;
         /** Size of the thread pool backing the scheduler. */
         private int poolSize = 4;
+        /**
+         * When several application instances share one database, every instance re-arms the same
+         * schedules and would fire each one N times. Enable this to gate each fire behind a shared
+         * JDBC lock so exactly one instance launches the job. Off by default (single-instance
+         * behaviour is unchanged); assumes the instances' clocks are roughly in sync (NTP).
+         */
+        private boolean clusterSafe = false;
 
         public boolean isEnabled() {
             return enabled;
@@ -210,6 +217,14 @@ public class BatchAdminProperties {
 
         public void setPoolSize(int poolSize) {
             this.poolSize = poolSize;
+        }
+
+        public boolean isClusterSafe() {
+            return clusterSafe;
+        }
+
+        public void setClusterSafe(boolean clusterSafe) {
+            this.clusterSafe = clusterSafe;
         }
     }
 

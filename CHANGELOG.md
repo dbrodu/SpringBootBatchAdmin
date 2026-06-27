@@ -9,6 +9,14 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+**Cluster-safe scheduling**
+- When several application instances share one database, each instance re-arms the same schedules and
+  would fire every job N times. Enable `batch.admin.scheduling.cluster-safe` (default `false`) to gate
+  each fire behind a shared JDBC lock (`BATCH_ADMIN_SCHEDULE_LOCK`, keyed by schedule + fire second):
+  exactly one instance wins the claim and launches the job; the others skip. Single-instance behaviour
+  is unchanged. Assumes the instances' clocks are roughly in sync (NTP); old lock rows are purged
+  opportunistically.
+
 **Failure / SLA alerting**
 - **Get notified when a job fails or overruns** — persisted alert rules raise an alert when a matching
   job finishes in a failure status (`FAILURE`) or exceeds an SLA duration threshold (`DURATION`). A rule
