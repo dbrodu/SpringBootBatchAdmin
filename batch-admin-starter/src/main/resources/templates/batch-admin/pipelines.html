@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{batch-admin/fragments :: head('Batch Admin — Pipelines')}"></head>
+<body>
+<header th:replace="~{batch-admin/fragments :: nav('pipelines')}"></header>
+<main class="app-main">
+  <div th:replace="~{batch-admin/fragments :: banner}"></div>
+
+  <form class="panel" th:action="@{|${basePath}/pipelines|}" method="post">
+    <h3>Chain a job to another</h3>
+    <p class="muted">When the source job finishes, the target job is launched automatically. Build
+      pipelines (A → B → C) and fan-out (A → B, A → C) by adding more triggers — every launched job is
+      itself observed. A safety cap bounds run-away or cyclic chains.</p>
+    <div class="inline-form">
+      <select name="sourceJob" required>
+        <option value="" disabled selected>When this job…</option>
+        <option th:each="j : ${jobs}" th:value="${j.name()}" th:text="${j.name()}">job</option>
+      </select>
+      <select name="condition">
+        <option value="SUCCESS">…succeeds</option>
+        <option value="FAILURE">…fails</option>
+        <option value="ANY">…finishes (any status)</option>
+      </select>
+      <select name="targetJob" required>
+        <option value="" disabled selected>…launch this job</option>
+        <option th:each="j : ${jobs}" th:value="${j.name()}" th:text="${j.name()}">job</option>
+      </select>
+      <input name="description" placeholder="description (optional)"/>
+      <button type="submit" class="btn btn-primary">Add trigger</button>
+    </div>
+  </form>
+
+  <table class="grid">
+    <thead>
+      <tr><th>Source job</th><th>When</th><th>Target job</th><th>Description</th><th>Enabled</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      <tr th:each="t : ${triggers}">
+        <td><code th:text="${t.sourceJob()}">a</code></td>
+        <td><span class="tag" th:text="${t.condition()}">SUCCESS</span></td>
+        <td>→ <code th:text="${t.targetJob()}">b</code></td>
+        <td class="muted" th:text="${t.description() != null ? t.description() : '—'}">—</td>
+        <td>
+          <span class="badge" th:classappend="${t.enabled()} ? 'badge-ok' : 'badge-idle'"
+                th:text="${t.enabled()} ? 'on' : 'off'">on</span>
+        </td>
+        <td class="actions">
+          <form th:action="@{|${basePath}/pipelines/${t.id()}/toggle|}" method="post" style="display:inline">
+            <button type="submit" class="btn btn-small" th:text="${t.enabled()} ? 'Disable' : 'Enable'">Disable</button>
+          </form>
+          <form th:action="@{|${basePath}/pipelines/${t.id()}/delete|}" method="post"
+                onsubmit="return confirm('Delete this trigger?');" style="display:inline">
+            <button type="submit" class="btn btn-small btn-danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+      <tr th:if="${triggers.isEmpty()}"><td colspan="6" class="muted">No triggers defined.</td></tr>
+    </tbody>
+  </table>
+</main>
+<footer th:replace="~{batch-admin/fragments :: footer}"></footer>
+</body>
+</html>

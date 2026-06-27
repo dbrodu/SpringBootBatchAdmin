@@ -67,6 +67,17 @@ public class BatchAdminSchemaInitializer {
                     CREATED_AT TIMESTAMP NOT NULL
                 )""".formatted(identity, textType));
 
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS BATCH_ADMIN_JOB_TRIGGER (
+                    ID %s PRIMARY KEY,
+                    SOURCE_JOB VARCHAR(200) NOT NULL,
+                    TARGET_JOB VARCHAR(200) NOT NULL,
+                    CONDITION_TYPE VARCHAR(20) NOT NULL,
+                    ENABLED BOOLEAN NOT NULL,
+                    DESCRIPTION VARCHAR(1000),
+                    CREATED_AT TIMESTAMP NOT NULL
+                )""".formatted(identity));
+
         log.info("[batch-admin] Schema ready (database: {})", product.isBlank() ? "unknown" : product);
     }
 
