@@ -85,6 +85,19 @@ public class BatchAdminSchemaInitializer {
         addColumnIfMissing("BATCH_ADMIN_JOB_TRIGGER", "INHERIT_PARAMS", "BOOLEAN DEFAULT FALSE NOT NULL");
         addColumnIfMissing("BATCH_ADMIN_JOB_TRIGGER", "PARAMETERS_JSON", "VARCHAR(2000)");
 
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS BATCH_ADMIN_ALERT_RULE (
+                    ID %s PRIMARY KEY,
+                    JOB_NAME VARCHAR(200) NOT NULL,
+                    RULE_TYPE VARCHAR(20) NOT NULL,
+                    THRESHOLD_MILLIS BIGINT,
+                    CHANNEL VARCHAR(20) NOT NULL,
+                    TARGET VARCHAR(1000),
+                    ENABLED BOOLEAN NOT NULL,
+                    DESCRIPTION VARCHAR(1000),
+                    CREATED_AT TIMESTAMP NOT NULL
+                )""".formatted(identity));
+
         log.info("[batch-admin] Schema ready (database: {})", product.isBlank() ? "unknown" : product);
     }
 
