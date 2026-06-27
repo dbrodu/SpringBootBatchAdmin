@@ -30,6 +30,9 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (jobs as nodes, triggers as directed edges) with a longest-path layering, and a new *Pipeline graph*
   GUI screen (linked from **Pipelines**) draws it as an inline SVG — arrows source→target labelled with
   the condition, disabled triggers dashed. No client-side layout library.
+- **Cascade cleanup of triggers** — deleting a dynamic job now also removes any triggers referencing it
+  (as source or target), so the pipeline never keeps dangling rules pointing at a job that no longer
+  exists. Overwriting a job through import keeps its triggers (the name is unchanged).
 
 **Building blocks derived from existing jobs**
 - `ExistingStepCatalog` — automatically exposes the host's already-registered jobs as reusable

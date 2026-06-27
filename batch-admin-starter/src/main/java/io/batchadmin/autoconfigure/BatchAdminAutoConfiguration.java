@@ -280,12 +280,13 @@ public class BatchAdminAutoConfiguration {
                                                ObjectProvider<io.batchadmin.logs.JobLogExecutionListener> logListener,
                                                ObjectProvider<io.batchadmin.event.BatchEventPublishingListener> eventListener,
                                                ObjectProvider<io.batchadmin.service.JobTriggerFiringListener> triggerListener,
+                                               io.batchadmin.service.JobTriggerService jobTriggerService,
                                                io.batchadmin.metadata.ValueResolver valueResolver,
                                                io.batchadmin.dynamic.ExistingStepCatalog existingStepCatalog) {
         return new DynamicJobService(jobRegistry, jobRepository, transactionManager, jobDefinitionDao,
                 jobDefinitionVersionDao, providers, stepProviders, objectMapper, properties,
                 componentJobListeners(logListener, eventListener, triggerListener), valueResolver,
-                existingStepCatalog);
+                existingStepCatalog, jobTriggerService);
     }
 
     /** Component-owned job listeners (log capture, event publishing, trigger firing) on every job. */

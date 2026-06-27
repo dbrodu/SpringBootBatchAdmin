@@ -64,6 +64,7 @@ public class DynamicJobService {
     private final List<JobExecutionListener> componentListeners;
     private final ValueResolver valueResolver;
     private final ExistingStepCatalog existingStepCatalog;
+    private final JobTriggerService triggerService;
 
     public DynamicJobService(JobRegistry jobRegistry,
                              JobRepository jobRepository,
@@ -76,7 +77,8 @@ public class DynamicJobService {
                              BatchAdminProperties properties,
                              List<JobExecutionListener> componentListeners,
                              ValueResolver valueResolver,
-                             ExistingStepCatalog existingStepCatalog) {
+                             ExistingStepCatalog existingStepCatalog,
+                             JobTriggerService triggerService) {
         this.jobRegistry = jobRegistry;
         this.jobRepository = jobRepository;
         this.transactionManager = transactionManager;
@@ -87,6 +89,7 @@ public class DynamicJobService {
         this.componentListeners = componentListeners == null ? List.of() : componentListeners;
         this.valueResolver = valueResolver;
         this.existingStepCatalog = existingStepCatalog;
+        this.triggerService = triggerService;
         Map<String, TaskletProvider> byType = new LinkedHashMap<>();
         for (TaskletProvider provider : providers) {
             byType.put(provider.getType().toLowerCase(), provider);
@@ -311,6 +314,11 @@ public class DynamicJobService {
     }
 
     public void deleteJob(String jobName) {
+        // A user-initiated delete cascades: triggers referencing this job are removed too.
+        deleteJob(jobName, true);
+    }
+
+    private void deleteJob(String jobName, boolean cascadeTriggers) {
         if (definitionDao.findByJobName(jobName).isEmpty()) {
             throw BatchAdminException.notFound(
                     "No dynamic job named '" + jobName + "' (only dynamic jobs can be deleted)");
@@ -318,6 +326,9 @@ public class DynamicJobService {
         jobRegistry.unregister(jobName);
         definitionDao.deleteByJobName(jobName);
         versionDao.deleteByJobName(jobName);
+        if (cascadeTriggers) {
+            triggerService.removeTriggersForJob(jobName);
+        }
         log.info("[batch-admin] Deleted dynamic job '{}'", jobName);
     }
 
@@ -490,7 +501,8 @@ public class DynamicJobService {
                         // Validate the replacement builds before removing the existing job.
                         validateSteps(definition.steps());
                         buildJob(name, definition.steps());
-                        deleteJob(name);
+                        // Overwrite keeps the same job name, so preserve its triggers.
+                        deleteJob(name, false);
                         createJobInternal(definition, VersionChangeType.IMPORT, "Imported from JSON");
                         updated.add(name);
                     } else {
