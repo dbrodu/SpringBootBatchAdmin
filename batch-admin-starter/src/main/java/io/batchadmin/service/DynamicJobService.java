@@ -144,6 +144,15 @@ public class DynamicJobService {
     }
 
     public String createJob(CreateJobRequest request) {
+        return createJob(request, null);
+    }
+
+    /** Creates a dynamic job, recording the first version with the given audit note. */
+    public String createJob(CreateJobRequest request, String changeNote) {
+        return createJobInternal(request, VersionChangeType.CREATE, changeNote);
+    }
+
+    private String createJobInternal(CreateJobRequest request, VersionChangeType changeType, String changeNote) {
         if (!properties.getDynamicJobs().isEnabled()) {
             throw BatchAdminException.badRequest("Dynamic job creation is disabled");
         }
@@ -163,15 +172,25 @@ public class DynamicJobService {
         registerJob(job);
         String stepsJson = writeSteps(request.steps());
         definitionDao.save(name, request.description(), stepsJson);
-        recordVersion(name, request.description(), stepsJson);
+        recordVersion(name, request.description(), stepsJson, changeType, changeNote);
 
         log.info("[batch-admin] Created dynamic job '{}' with {} step(s)", name, request.steps().size());
         return name;
     }
 
-    /** Appends a snapshot of the job's current definition to its version history. */
-    private void recordVersion(String jobName, String description, String stepsJson) {
-        versionDao.save(jobName, versionDao.nextVersion(jobName), description, stepsJson);
+    /** Appends a snapshot of the job's current definition, with audit metadata, to its history. */
+    private void recordVersion(String jobName, String description, String stepsJson,
+                               VersionChangeType changeType, String changeNote) {
+        versionDao.save(jobName, versionDao.nextVersion(jobName), description, stepsJson,
+                CurrentActor.name(), changeType.name(), trimToNull(changeNote));
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     /**
@@ -240,7 +259,8 @@ public class DynamicJobService {
             steps = List.of(new StepDefinition(sourceName,
                     ExistingStepCatalog.JOB_TYPE_PREFIX + sourceName, Map.of()));
         }
-        return createJob(new CreateJobRequest(newName, "Clone of '" + sourceName + "'", steps));
+        return createJob(new CreateJobRequest(newName, "Clone of '" + sourceName + "'", steps),
+                "Cloned from '" + sourceName + "'");
     }
 
     /** The stored definition (name, description, steps) of a dynamic job, for editing/inspection. */
@@ -256,6 +276,16 @@ public class DynamicJobService {
      * edit leaves the current job untouched.
      */
     public String updateJob(String jobName, CreateJobRequest request) {
+        return updateJob(jobName, request, null);
+    }
+
+    /** Edits a dynamic job in place, recording the new version with the given audit note. */
+    public String updateJob(String jobName, CreateJobRequest request, String changeNote) {
+        return applyUpdate(jobName, request, VersionChangeType.EDIT, changeNote);
+    }
+
+    private String applyUpdate(String jobName, CreateJobRequest request,
+                               VersionChangeType changeType, String changeNote) {
         if (!properties.getDynamicJobs().isEnabled()) {
             throw BatchAdminException.badRequest("Dynamic job creation is disabled");
         }
@@ -273,7 +303,7 @@ public class DynamicJobService {
         registerJob(rebuilt);
         String stepsJson = writeSteps(request.steps());
         definitionDao.update(jobName, request.description(), stepsJson);
-        recordVersion(jobName, request.description(), stepsJson);
+        recordVersion(jobName, request.description(), stepsJson, changeType, changeNote);
 
         log.info("[batch-admin] Updated dynamic job '{}' with {} step(s)", jobName, request.steps().size());
         return jobName;
@@ -303,6 +333,7 @@ public class DynamicJobService {
         int current = records.stream().mapToInt(JobDefinitionVersionRecord::version).max().orElse(0);
         return records.stream()
                 .map(r -> new JobVersionInfo(r.version(), r.description(), readSteps(r.stepsJson()),
+                        r.author(), r.changeType(), r.changeNote(),
                         r.createdAt(), r.version() == current))
                 .toList();
     }
@@ -320,7 +351,8 @@ public class DynamicJobService {
         JobDefinitionVersionRecord target = versionDao.find(jobName, version).orElseThrow(() ->
                 BatchAdminException.notFound("Job '" + jobName + "' has no version " + version));
         List<StepDefinition> steps = readSteps(target.stepsJson());
-        return updateJob(jobName, new CreateJobRequest(jobName, target.description(), steps));
+        return applyUpdate(jobName, new CreateJobRequest(jobName, target.description(), steps),
+                VersionChangeType.ROLLBACK, "Rolled back to version " + version);
     }
 
     // ----------------------------------------------------------------------------------------
@@ -378,7 +410,7 @@ public class DynamicJobService {
                         validateSteps(definition.steps());
                         buildJob(name, definition.steps());
                         deleteJob(name);
-                        createJob(definition);
+                        createJobInternal(definition, VersionChangeType.IMPORT, "Imported from JSON");
                         updated.add(name);
                     } else {
                         skipped.add(name);
@@ -386,7 +418,7 @@ public class DynamicJobService {
                 } else if (jobRegistry.getJobNames().contains(name)) {
                     failed.put(name, "a declared (non-dynamic) job with this name already exists");
                 } else {
-                    created.add(createJob(definition));
+                    created.add(createJobInternal(definition, VersionChangeType.IMPORT, "Imported from JSON"));
                 }
             } catch (RuntimeException ex) {
                 failed.put(name.isBlank() ? "(unnamed)" : name, ex.getMessage());
@@ -423,7 +455,8 @@ public class DynamicJobService {
                 registerJob(buildJob(record.jobName(), steps));
                 // Backfill a baseline version for jobs persisted before version history existed.
                 if (!versionDao.existsByJobName(record.jobName())) {
-                    recordVersion(record.jobName(), record.description(), record.stepsJson());
+                    recordVersion(record.jobName(), record.description(), record.stepsJson(),
+                            VersionChangeType.BASELINE, "Baseline (created before version history)");
                 }
                 log.info("[batch-admin] Re-registered persisted dynamic job '{}'", record.jobName());
             } catch (RuntimeException ex) {

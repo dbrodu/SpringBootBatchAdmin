@@ -38,14 +38,22 @@ class JobVersioningIntegrationTest {
                 }).getBody();
     }
 
+    private Map<String, Object> version(String jobName, int number) {
+        return versions(jobName).stream().filter(v -> v.get("version").equals(number)).findFirst().orElseThrow();
+    }
+
     @Test
     void recordsAVersionOnCreateAndEditThenRollsBack() {
-        // v1: one step
-        rest.postForEntity(api("/jobs"), new CreateJobRequest("verA", "v1",
+        // v1: one step, created with an explicit change note
+        rest.postForEntity(api("/jobs?note=initial-version"), new CreateJobRequest("verA", "v1",
                 List.of(new StepDefinition("only", "log", Map.of("message", "one")))), JobSummary.class);
         assertThat(versions("verA")).hasSize(1);
         assertThat(versions("verA").get(0).get("version")).isEqualTo(1);
         assertThat(versions("verA").get(0).get("current")).isEqualTo(true);
+        // audit metadata captured on the first version
+        assertThat(version("verA", 1).get("changeType")).isEqualTo("CREATE");
+        assertThat(version("verA", 1).get("author")).isEqualTo("system");
+        assertThat(version("verA", 1).get("changeNote")).isEqualTo("initial-version");
 
         // v2: two steps (edit)
         rest.exchange(api("/jobs/verA"), HttpMethod.PUT, new HttpEntity<>(new CreateJobRequest("verA", "v2",
@@ -54,6 +62,7 @@ class JobVersioningIntegrationTest {
         List<Map<String, Object>> afterEdit = versions("verA");
         assertThat(afterEdit).hasSize(2);
         assertThat(afterEdit).anyMatch(v -> v.get("version").equals(2) && Boolean.TRUE.equals(v.get("current")));
+        assertThat(version("verA", 2).get("changeType")).isEqualTo("EDIT");
 
         // roll back to v1 -> appends v3 with v1's (single-step) content, now current
         ResponseEntity<JobSummary> rolled = rest.postForEntity(api("/jobs/verA/rollback?version=1"), null,
@@ -62,6 +71,9 @@ class JobVersioningIntegrationTest {
         List<Map<String, Object>> afterRollback = versions("verA");
         assertThat(afterRollback).hasSize(3);
         assertThat(afterRollback).anyMatch(v -> v.get("version").equals(3) && Boolean.TRUE.equals(v.get("current")));
+        // the rollback is itself an audited version
+        assertThat(version("verA", 3).get("changeType")).isEqualTo("ROLLBACK");
+        assertThat((String) version("verA", 3).get("changeNote")).contains("version 1");
 
         // the job now runs the rolled-back (single-step) definition
         ResponseEntity<ExecutionSummary> started = rest.postForEntity(api("/jobs/verA/executions"),
@@ -90,6 +102,10 @@ class JobVersioningIntegrationTest {
         String page = rest.getForObject("/batch-admin/jobs/verGui/history", String.class);
         assertThat(page).contains("Version history");
         assertThat(page).contains("current");
+        // audit columns and metadata render
+        assertThat(page).contains("Change");
+        assertThat(page).contains("CREATE");
+        assertThat(page).contains("system");
 
         assertThat(rest.getForObject("/batch-admin/jobs", String.class)).contains("/history");
     }

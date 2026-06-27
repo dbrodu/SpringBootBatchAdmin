@@ -12,13 +12,14 @@
   </div>
 
   <h3>Version history — <code th:text="${jobName}">jobName</code></h3>
-  <p class="muted">Every create, edit and rollback appends a version. Roll back to restore a previous
-    definition — the restored content is recorded as a new version, so rollbacks are themselves
-    reversible.</p>
+  <p class="muted">Every create, edit and rollback appends a version, recording who made the change,
+    when, the kind of change and an optional note. Roll back to restore a previous definition — the
+    restored content is recorded as a new version, so rollbacks are themselves reversible.</p>
 
   <table class="grid">
     <thead>
-      <tr><th>Version</th><th>When</th><th>Steps</th><th>Description</th><th>Actions</th></tr>
+      <tr><th>Version</th><th>When</th><th>Change</th><th>By</th><th>Steps</th><th>Description</th>
+        <th>Note</th><th>Actions</th></tr>
     </thead>
     <tbody>
       <tr th:each="v : ${versions}">
@@ -27,6 +28,8 @@
           <span class="tag" th:if="${v.current()}">current</span>
         </td>
         <td th:text="${@batchAdminFormat.date(v.createdAt())}">—</td>
+        <td><span class="tag" th:text="${v.changeType() != null ? v.changeType() : '—'}">EDIT</span></td>
+        <td th:text="${v.author() != null ? v.author() : '—'}">system</td>
         <td>
           <details>
             <summary th:text="${v.steps().size()} + ' step(s)'">2 steps</summary>
@@ -36,6 +39,7 @@
           </details>
         </td>
         <td class="muted" th:text="${v.description() != null ? v.description() : '—'}">—</td>
+        <td class="muted" th:text="${v.changeNote() != null ? v.changeNote() : '—'}">—</td>
         <td>
           <form th:unless="${v.current()}" th:action="@{|${basePath}/jobs/${jobName}/rollback|}" method="post"
                 onsubmit="return confirm('Roll back to this version?');" style="display:inline">
@@ -45,7 +49,7 @@
           <span th:if="${v.current()}" class="muted">current</span>
         </td>
       </tr>
-      <tr th:if="${versions.isEmpty()}"><td colspan="5" class="muted">No history yet.</td></tr>
+      <tr th:if="${versions.isEmpty()}"><td colspan="8" class="muted">No history yet.</td></tr>
     </tbody>
   </table>
 </main>

@@ -43,8 +43,18 @@ public class BatchAdminSchemaInitializer {
                     VERSION_NUMBER INTEGER NOT NULL,
                     DESCRIPTION VARCHAR(1000),
                     STEPS_JSON %s NOT NULL,
+                    AUTHOR VARCHAR(200),
+                    CHANGE_TYPE VARCHAR(20),
+                    CHANGE_NOTE VARCHAR(1000),
                     CREATED_AT TIMESTAMP NOT NULL
                 )""".formatted(identity, textType));
+
+        // Audit columns were added after the table shipped: add them to pre-existing tables.
+        // ADD COLUMN IF NOT EXISTS is supported by both H2 and PostgreSQL and is a no-op when the
+        // table was just created above.
+        addColumnIfMissing("BATCH_ADMIN_JOB_DEFINITION_VERSION", "AUTHOR", "VARCHAR(200)");
+        addColumnIfMissing("BATCH_ADMIN_JOB_DEFINITION_VERSION", "CHANGE_TYPE", "VARCHAR(20)");
+        addColumnIfMissing("BATCH_ADMIN_JOB_DEFINITION_VERSION", "CHANGE_NOTE", "VARCHAR(1000)");
 
         jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS BATCH_ADMIN_JOB_SCHEDULE (
@@ -58,6 +68,16 @@ public class BatchAdminSchemaInitializer {
                 )""".formatted(identity, textType));
 
         log.info("[batch-admin] Schema ready (database: {})", product.isBlank() ? "unknown" : product);
+    }
+
+    /** Idempotently adds a column to an existing table (no-op when it is already present). */
+    private void addColumnIfMissing(String table, String column, String type) {
+        try {
+            jdbcTemplate.execute(
+                    "ALTER TABLE " + table + " ADD COLUMN IF NOT EXISTS " + column + " " + type);
+        } catch (RuntimeException ex) {
+            log.warn("[batch-admin] Could not ensure column {}.{}: {}", table, column, ex.getMessage());
+        }
     }
 
     private String detectProduct() {
