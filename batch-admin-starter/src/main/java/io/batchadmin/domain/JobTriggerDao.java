@@ -90,9 +90,14 @@ public class JobTriggerDao {
                 MAPPER, sourceJob);
     }
 
-    /** Removes every trigger referencing the job as source or target (used when a job is deleted). */
-    public void deleteByJob(String jobName) {
-        jdbc.update("DELETE FROM " + TABLE + " WHERE SOURCE_JOB = ? OR TARGET_JOB = ?", jobName, jobName);
+    /**
+     * Removes every trigger referencing the job as source or target (used when a job is deleted).
+     *
+     * @return how many triggers were removed
+     */
+    public int deleteByJob(String jobName) {
+        return jdbc.update("DELETE FROM " + TABLE + " WHERE SOURCE_JOB = ? OR TARGET_JOB = ?",
+                jobName, jobName);
     }
 
     private static Instant toInstant(Timestamp timestamp) {

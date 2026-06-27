@@ -112,6 +112,32 @@ class JobChainingIntegrationTest {
         assertThat(page).contains("g3");
     }
 
+    private long triggersInvolving(String jobName) {
+        List<Map<String, Object>> all = rest.exchange(api("/triggers"), HttpMethod.GET, null,
+                new ParameterizedTypeReference<List<Map<String, Object>>>() {
+                }).getBody();
+        return all.stream()
+                .filter(t -> jobName.equals(t.get("sourceJob")) || jobName.equals(t.get("targetJob")))
+                .count();
+    }
+
+    @Test
+    void deletingAJobRemovesTriggersReferencingIt() {
+        createJob("delSrc");
+        createJob("delMid");
+        createJob("delDst");
+        // delMid is the target of one trigger and the source of another.
+        rest.postForEntity(api("/triggers"),
+                new JobTriggerRequest("delSrc", "delMid", "SUCCESS", true, false, null, null), JobTriggerInfo.class);
+        rest.postForEntity(api("/triggers"),
+                new JobTriggerRequest("delMid", "delDst", "SUCCESS", true, false, null, null), JobTriggerInfo.class);
+        assertThat(triggersInvolving("delMid")).isEqualTo(2);
+
+        rest.delete(api("/jobs/delMid"));
+
+        assertThat(triggersInvolving("delMid")).isZero();
+    }
+
     @Test
     void aJobCannotTriggerItself() {
         createJob("selfJob");

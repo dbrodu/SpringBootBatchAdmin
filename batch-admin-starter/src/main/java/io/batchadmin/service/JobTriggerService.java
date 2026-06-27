@@ -182,6 +182,20 @@ public class JobTriggerService {
     }
 
     /**
+     * Removes every trigger that references the job as source or target. Called when a job is deleted
+     * so the pipeline does not keep dangling rules pointing at a job that no longer exists.
+     *
+     * @return how many triggers were removed
+     */
+    public int removeTriggersForJob(String jobName) {
+        int removed = triggerDao.deleteByJob(jobName);
+        if (removed > 0) {
+            log.info("[batch-admin] Removed {} trigger(s) referencing deleted job '{}'", removed, jobName);
+        }
+        return removed;
+    }
+
+    /**
      * Invoked when any administered job finishes. Launches the target of every enabled, matching
      * trigger whose source is this job, forwarding parameters (when configured) and threading (and
      * bounding) the chain depth.
