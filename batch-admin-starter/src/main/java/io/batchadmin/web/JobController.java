@@ -8,6 +8,7 @@ import io.batchadmin.web.dto.ExecutionSummary;
 import io.batchadmin.web.dto.ImportResult;
 import io.batchadmin.web.dto.JobPreview;
 import io.batchadmin.web.dto.JobSummary;
+import io.batchadmin.web.dto.JobVersionDiff;
 import io.batchadmin.web.dto.JobVersionInfo;
 import io.batchadmin.web.dto.ProviderInfo;
 import io.batchadmin.web.dto.StartJobRequest;
@@ -93,6 +94,13 @@ public class JobController {
         return dynamicJobService.listVersions(jobName);
     }
 
+    /** A step-level diff between two versions of a dynamic job's definition. */
+    @GetMapping("/{jobName}/diff")
+    public JobVersionDiff diffVersions(@PathVariable String jobName,
+                                       @RequestParam int from, @RequestParam int to) {
+        return dynamicJobService.diffVersions(jobName, from, to);
+    }
+
     /** Rolls a dynamic job back to a previous version (recorded as a new version). */
     @PostMapping("/{jobName}/rollback")
     public JobSummary rollback(@PathVariable String jobName, @RequestParam int version) {
@@ -101,8 +109,9 @@ public class JobController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public JobSummary createJob(@RequestBody CreateJobRequest request) {
-        String name = dynamicJobService.createJob(request);
+    public JobSummary createJob(@RequestBody CreateJobRequest request,
+                                @RequestParam(required = false) String note) {
+        String name = dynamicJobService.createJob(request, note);
         return jobAdminService.getJob(name);
     }
 
@@ -123,8 +132,9 @@ public class JobController {
 
     /** Replaces an existing dynamic job's steps/description in place (the name is fixed). */
     @PutMapping("/{jobName}")
-    public JobSummary updateJob(@PathVariable String jobName, @RequestBody CreateJobRequest request) {
-        String name = dynamicJobService.updateJob(jobName, request);
+    public JobSummary updateJob(@PathVariable String jobName, @RequestBody CreateJobRequest request,
+                                @RequestParam(required = false) String note) {
+        String name = dynamicJobService.updateJob(jobName, request, note);
         return jobAdminService.getJob(name);
     }
 

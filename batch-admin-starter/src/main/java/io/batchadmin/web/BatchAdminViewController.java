@@ -147,10 +147,11 @@ public class BatchAdminViewController {
     public String updateJob(@PathVariable String jobName,
                             @RequestParam(required = false) String description,
                             @RequestParam(required = false) String steps,
+                            @RequestParam(required = false) String note,
                             RedirectAttributes redirect) {
         try {
             List<StepDefinition> stepDefinitions = parseSteps(steps);
-            dynamicJobService.updateJob(jobName, new CreateJobRequest(jobName, description, stepDefinitions));
+            dynamicJobService.updateJob(jobName, new CreateJobRequest(jobName, description, stepDefinitions), note);
             flash(redirect, false, "Updated job '" + jobName + "'.");
             return redirect(redirect, "/jobs");
         } catch (BatchAdminException | IllegalArgumentException ex) {
@@ -260,10 +261,12 @@ public class BatchAdminViewController {
     public String createJob(@RequestParam String jobName,
                             @RequestParam(required = false) String description,
                             @RequestParam(required = false) String steps,
+                            @RequestParam(required = false) String note,
                             RedirectAttributes redirect) {
         try {
             List<StepDefinition> stepDefinitions = parseSteps(steps);
-            String name = dynamicJobService.createJob(new CreateJobRequest(jobName, description, stepDefinitions));
+            String name = dynamicJobService.createJob(
+                    new CreateJobRequest(jobName, description, stepDefinitions), note);
             flash(redirect, false, "Created job '" + name + "'.");
             return redirect(redirect, "/jobs");
         } catch (BatchAdminException | IllegalArgumentException ex) {
@@ -330,6 +333,34 @@ public class BatchAdminViewController {
         } catch (BatchAdminException ex) {
             flash(redirect, true, ex.getMessage());
             return redirect(redirect, "/jobs");
+        }
+    }
+
+    @GetMapping("/jobs/{jobName}/diff")
+    public String jobDiff(@PathVariable String jobName,
+                          @RequestParam(required = false) Integer from,
+                          @RequestParam(required = false) Integer to,
+                          Model model, RedirectAttributes redirect) {
+        try {
+            List<JobVersionInfo> versions = dynamicJobService.listVersions(jobName);
+            if (versions.isEmpty()) {
+                flash(redirect, true, "Job '" + jobName + "' has no versions to compare.");
+                return redirect(redirect, "/jobs/" + jobName + "/history");
+            }
+            // Default to comparing the two most recent versions (or a version against itself).
+            int toVersion = to != null ? to : versions.get(0).version();
+            int fromVersion = from != null ? from
+                    : versions.get(versions.size() > 1 ? 1 : 0).version();
+            model.addAttribute("active", "jobs");
+            model.addAttribute("jobName", jobName);
+            model.addAttribute("versions", versions);
+            model.addAttribute("fromVersion", fromVersion);
+            model.addAttribute("toVersion", toVersion);
+            model.addAttribute("diff", dynamicJobService.diffVersions(jobName, fromVersion, toVersion));
+            return "batch-admin/job-diff";
+        } catch (BatchAdminException ex) {
+            flash(redirect, true, ex.getMessage());
+            return redirect(redirect, "/jobs/" + jobName + "/history");
         }
     }
 

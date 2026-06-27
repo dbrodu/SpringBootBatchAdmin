@@ -55,6 +55,18 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   previous definition via `GET <base-path>/api/jobs/<name>/versions` and
   `POST <base-path>/api/jobs/<name>/rollback?version=N`, or the *History* action on the **Jobs**
   screen. A rollback is recorded as a new version, so it is itself reversible.
+- **Audit metadata on each version** — every snapshot now records **who** made the change
+  (the authenticated user when the optional security layer is on, else `system`), the **kind** of
+  change (`CREATE` / `EDIT` / `ROLLBACK` / `IMPORT` / `BASELINE`) and an optional free-text **note**.
+  Pass the note via `?note=` on `POST`/`PUT <base-path>/api/jobs[/<name>]` or the new *Change note*
+  field on the **Create / Edit job** form; the **History** screen shows the new *Change*, *By* and
+  *Note* columns. New `AUTHOR` / `CHANGE_TYPE` / `CHANGE_NOTE` columns are added to existing
+  `BATCH_ADMIN_JOB_DEFINITION_VERSION` tables automatically (`ADD COLUMN IF NOT EXISTS`).
+- **Diff two versions** of a dynamic job — `GET <base-path>/api/jobs/<name>/diff?from=A&to=B` returns
+  an ordered, step-level diff (longest-common-subsequence, so reorders and edits read naturally:
+  `unchanged` / `added` / `removed`) plus the two versions' audit metadata and whether the description
+  changed. A *Compare versions* screen (reachable from the **History** screen) shows it with two
+  version pickers and a colour-coded diff.
 
 **Reusable SQL → JSON → target building blocks**
 - `GenericSqlItemReader` / `GenericSqlItemReaderBuilder` — a configurable `ItemReader` that streams the

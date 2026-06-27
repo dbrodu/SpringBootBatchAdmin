@@ -63,6 +63,12 @@
         grab a card and drop it where the blue line appears (drop past the last card to send it to the end).</span>
     </div>
 
+    <label class="field" style="max-width:680px">
+      <span>Change note (optional)</span>
+      <input name="note" placeholder="e.g. added retry step before load"/>
+      <span class="hint">Recorded in the job's version history, alongside who made the change and when.</span>
+    </label>
+
     <div class="inline-form">
       <button type="submit" th:formaction="@{|${basePath}/jobs/preview|}" class="btn">👁 Preview steps</button>
       <button type="submit" class="btn btn-primary"
