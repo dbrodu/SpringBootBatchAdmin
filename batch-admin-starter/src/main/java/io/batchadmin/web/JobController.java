@@ -8,6 +8,7 @@ import io.batchadmin.web.dto.ExecutionSummary;
 import io.batchadmin.web.dto.ImportResult;
 import io.batchadmin.web.dto.JobPreview;
 import io.batchadmin.web.dto.JobSummary;
+import io.batchadmin.web.dto.JobVersionDiff;
 import io.batchadmin.web.dto.JobVersionInfo;
 import io.batchadmin.web.dto.ProviderInfo;
 import io.batchadmin.web.dto.StartJobRequest;
@@ -91,6 +92,13 @@ public class JobController {
     @GetMapping("/{jobName}/versions")
     public List<JobVersionInfo> listVersions(@PathVariable String jobName) {
         return dynamicJobService.listVersions(jobName);
+    }
+
+    /** A step-level diff between two versions of a dynamic job's definition. */
+    @GetMapping("/{jobName}/diff")
+    public JobVersionDiff diffVersions(@PathVariable String jobName,
+                                       @RequestParam int from, @RequestParam int to) {
+        return dynamicJobService.diffVersions(jobName, from, to);
     }
 
     /** Rolls a dynamic job back to a previous version (recorded as a new version). */
