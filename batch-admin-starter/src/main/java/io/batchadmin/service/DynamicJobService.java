@@ -16,6 +16,7 @@ import io.batchadmin.web.dto.CreateJobRequest;
 import io.batchadmin.web.dto.ImportResult;
 import io.batchadmin.web.dto.JobPreview;
 import io.batchadmin.web.dto.JobStepPreview;
+import io.batchadmin.web.dto.JobVersionDiff;
 import io.batchadmin.web.dto.JobVersionInfo;
 import io.batchadmin.web.dto.ProviderInfo;
 import java.util.ArrayList;
@@ -331,11 +332,91 @@ public class DynamicJobService {
         }
         List<JobDefinitionVersionRecord> records = versionDao.findByJobName(jobName);
         int current = records.stream().mapToInt(JobDefinitionVersionRecord::version).max().orElse(0);
-        return records.stream()
-                .map(r -> new JobVersionInfo(r.version(), r.description(), readSteps(r.stepsJson()),
-                        r.author(), r.changeType(), r.changeNote(),
-                        r.createdAt(), r.version() == current))
-                .toList();
+        return records.stream().map(r -> toInfo(r, current)).toList();
+    }
+
+    private JobVersionInfo toInfo(JobDefinitionVersionRecord record, int current) {
+        return new JobVersionInfo(record.version(), record.description(), readSteps(record.stepsJson()),
+                record.author(), record.changeType(), record.changeNote(),
+                record.createdAt(), record.version() == current);
+    }
+
+    /**
+     * Compares two versions of a dynamic job's definition: an ordered, line-level diff of their steps
+     * (each step rendered as {@code name = type (k=v)}) plus whether the description changed. The diff
+     * is computed with a longest-common-subsequence pass, so reorders and edits read naturally.
+     */
+    public JobVersionDiff diffVersions(String jobName, int fromVersion, int toVersion) {
+        if (definitionDao.findByJobName(jobName).isEmpty()) {
+            throw BatchAdminException.notFound("No dynamic job named '" + jobName + "'");
+        }
+        int current = versionDao.findByJobName(jobName).stream()
+                .mapToInt(JobDefinitionVersionRecord::version).max().orElse(0);
+        JobDefinitionVersionRecord from = versionDao.find(jobName, fromVersion).orElseThrow(() ->
+                BatchAdminException.notFound("Job '" + jobName + "' has no version " + fromVersion));
+        JobDefinitionVersionRecord to = versionDao.find(jobName, toVersion).orElseThrow(() ->
+                BatchAdminException.notFound("Job '" + jobName + "' has no version " + toVersion));
+        List<JobVersionDiff.Line> steps = diffLines(
+                stepLines(readSteps(from.stepsJson())), stepLines(readSteps(to.stepsJson())));
+        boolean descriptionChanged = !java.util.Objects.equals(from.description(), to.description());
+        return new JobVersionDiff(jobName, toInfo(from, current), toInfo(to, current),
+                descriptionChanged, steps);
+    }
+
+    /** Renders each step as a single {@code name = type (k=v, …)} line, for line-level diffing. */
+    private static List<String> stepLines(List<StepDefinition> steps) {
+        List<String> lines = new ArrayList<>();
+        for (StepDefinition step : steps) {
+            StringBuilder line = new StringBuilder();
+            line.append(step.name()).append(" = ").append(step.type());
+            if (step.properties() != null && !step.properties().isEmpty()) {
+                String props = step.properties().entrySet().stream()
+                        .map(entry -> entry.getKey() + "=" + entry.getValue())
+                        .collect(java.util.stream.Collectors.joining(", "));
+                line.append(" (").append(props).append(")");
+            }
+            lines.add(line.toString());
+        }
+        return lines;
+    }
+
+    /** Classic longest-common-subsequence line diff: unchanged / removed (from) / added (to). */
+    private static List<JobVersionDiff.Line> diffLines(List<String> from, List<String> to) {
+        int n = from.size();
+        int m = to.size();
+        int[][] lcs = new int[n + 1][m + 1];
+        for (int i = n - 1; i >= 0; i--) {
+            for (int j = m - 1; j >= 0; j--) {
+                lcs[i][j] = from.get(i).equals(to.get(j))
+                        ? lcs[i + 1][j + 1] + 1
+                        : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+            }
+        }
+        List<JobVersionDiff.Line> diff = new ArrayList<>();
+        int i = 0;
+        int j = 0;
+        while (i < n && j < m) {
+            if (from.get(i).equals(to.get(j))) {
+                diff.add(new JobVersionDiff.Line("unchanged", from.get(i)));
+                i++;
+                j++;
+            } else if (lcs[i + 1][j] >= lcs[i][j + 1]) {
+                diff.add(new JobVersionDiff.Line("removed", from.get(i)));
+                i++;
+            } else {
+                diff.add(new JobVersionDiff.Line("added", to.get(j)));
+                j++;
+            }
+        }
+        while (i < n) {
+            diff.add(new JobVersionDiff.Line("removed", from.get(i)));
+            i++;
+        }
+        while (j < m) {
+            diff.add(new JobVersionDiff.Line("added", to.get(j)));
+            j++;
+        }
+        return diff;
     }
 
     /**

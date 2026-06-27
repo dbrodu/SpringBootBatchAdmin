@@ -87,6 +87,42 @@ class JobVersioningIntegrationTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void diffsTwoVersionsAtTheStepLevel() {
+        // v1: extract, load
+        rest.postForEntity(api("/jobs"), new CreateJobRequest("verDiff", "d",
+                List.of(new StepDefinition("extract", "log", Map.of()),
+                        new StepDefinition("load", "log", Map.of()))), JobSummary.class);
+        // v2: extract, transform, load -> 'transform' inserted in the middle
+        rest.exchange(api("/jobs/verDiff"), HttpMethod.PUT, new HttpEntity<>(new CreateJobRequest("verDiff", "d",
+                List.of(new StepDefinition("extract", "log", Map.of()),
+                        new StepDefinition("transform", "log", Map.of()),
+                        new StepDefinition("load", "log", Map.of())))), JobSummary.class);
+
+        Map<String, Object> diff = rest.getForObject(api("/jobs/verDiff/diff?from=1&to=2"), Map.class);
+        List<Map<String, Object>> steps = (List<Map<String, Object>>) diff.get("steps");
+        // extract & load unchanged, transform added, nothing removed
+        assertThat(steps).anyMatch(l -> l.get("op").equals("added")
+                && ((String) l.get("text")).startsWith("transform"));
+        assertThat(steps).anyMatch(l -> l.get("op").equals("unchanged")
+                && ((String) l.get("text")).startsWith("extract"));
+        assertThat(steps).noneMatch(l -> l.get("op").equals("removed"));
+
+        // the GUI compare page renders with the selectors and the added step line
+        String page = rest.getForObject("/batch-admin/jobs/verDiff/diff?from=1&to=2", String.class);
+        assertThat(page).contains("Compare versions");
+        assertThat(page).contains("transform = log");
+    }
+
+    @Test
+    void diffingAnUnknownVersionIs404() {
+        rest.postForEntity(api("/jobs"), new CreateJobRequest("verDiff2", null,
+                List.of(new StepDefinition("s", "log", Map.of()))), JobSummary.class);
+        ResponseEntity<String> response = rest.getForEntity(api("/jobs/verDiff2/diff?from=1&to=99"), String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
     void rollingBackToAnUnknownVersionIs404() {
         rest.postForEntity(api("/jobs"), new CreateJobRequest("verB", null,
                 List.of(new StepDefinition("s", "log", Map.of()))), JobSummary.class);

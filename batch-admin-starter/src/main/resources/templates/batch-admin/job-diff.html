@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{batch-admin/fragments :: head('Batch Admin — Compare versions')}"></head>
+<body>
+<header th:replace="~{batch-admin/fragments :: nav('jobs')}"></header>
+<main class="app-main">
+  <div th:replace="~{batch-admin/fragments :: banner}"></div>
+
+  <div class="toolbar">
+    <a class="btn" th:href="@{|${basePath}/jobs/${jobName}/history|}">← History</a>
+    <a class="btn" th:href="@{|${basePath}/jobs|}">Jobs</a>
+  </div>
+
+  <h3>Compare versions — <code th:text="${jobName}">jobName</code></h3>
+
+  <form class="inline-form" method="get" th:action="@{|${basePath}/jobs/${jobName}/diff|}">
+    <label class="field" style="max-width:220px">
+      <span>From (older)</span>
+      <select name="from">
+        <option th:each="v : ${versions}" th:value="${v.version()}"
+                th:text="'v' + ${v.version()} + ' — ' + ${v.changeType()}"
+                th:selected="${v.version() == fromVersion}">v1 — CREATE</option>
+      </select>
+    </label>
+    <label class="field" style="max-width:220px">
+      <span>To (newer)</span>
+      <select name="to">
+        <option th:each="v : ${versions}" th:value="${v.version()}"
+                th:text="'v' + ${v.version()} + ' — ' + ${v.changeType()}"
+                th:selected="${v.version() == toVersion}">v3 — ROLLBACK</option>
+      </select>
+    </label>
+    <button type="submit" class="btn btn-primary">Compare</button>
+  </form>
+
+  <table class="grid" style="margin-top:14px">
+    <thead><tr><th></th><th>From — v<span th:text="${diff.from().version()}">1</span></th>
+      <th>To — v<span th:text="${diff.to().version()}">3</span></th></tr></thead>
+    <tbody>
+      <tr>
+        <th>Change</th>
+        <td><span class="tag" th:text="${diff.from().changeType()}">CREATE</span></td>
+        <td><span class="tag" th:text="${diff.to().changeType()}">ROLLBACK</span></td>
+      </tr>
+      <tr>
+        <th>By</th>
+        <td th:text="${diff.from().author() != null ? diff.from().author() : '—'}">system</td>
+        <td th:text="${diff.to().author() != null ? diff.to().author() : '—'}">system</td>
+      </tr>
+      <tr>
+        <th>When</th>
+        <td th:text="${@batchAdminFormat.date(diff.from().createdAt())}">—</td>
+        <td th:text="${@batchAdminFormat.date(diff.to().createdAt())}">—</td>
+      </tr>
+      <tr th:classappend="${diff.descriptionChanged()} ? '' : ''">
+        <th>Description</th>
+        <td class="muted" th:text="${diff.from().description() != null ? diff.from().description() : '—'}">—</td>
+        <td class="muted" th:text="${diff.to().description() != null ? diff.to().description() : '—'}">—</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="muted" th:if="${diff.descriptionChanged()}" style="margin-top:6px">The description changed
+    between these versions.</p>
+  <p class="muted" th:unless="${diff.descriptionChanged()}" style="margin-top:6px">The description is
+    unchanged.</p>
+
+  <h4>Steps</h4>
+  <div style="border:1px solid var(--border); border-radius:var(--r-md); overflow:hidden;
+              font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:13px">
+    <div th:each="line : ${diff.steps()}"
+         th:with="added=${line.op() == 'added'}, removed=${line.op() == 'removed'}"
+         th:style="${added}
+             ? 'padding:5px 12px; background:var(--accent-weak); color:var(--accent); border-bottom:1px solid var(--border)'
+             : (${removed}
+             ? 'padding:5px 12px; background:var(--primary-weak); color:var(--primary-strong); border-bottom:1px solid var(--border)'
+             : 'padding:5px 12px; color:var(--muted); border-bottom:1px solid var(--border)')">
+      <span th:text="${added ? '+ ' : (removed ? '− ' : '  ')}" style="white-space:pre">  </span><span
+            th:text="${line.text()}">extract = log</span>
+    </div>
+    <div th:if="${diff.steps().isEmpty()}" style="padding:8px 12px; color:var(--muted)">No steps.</div>
+  </div>
+  <p class="muted" style="margin-top:8px">
+    <span style="color:var(--accent)">+ added</span> in v<span th:text="${diff.to().version()}">3</span>,
+    <span style="color:var(--primary-strong)">− removed</span> from v<span th:text="${diff.from().version()}">1</span>.
+    A changed step shows as a removed line and an added line.
+  </p>
+</main>
+<footer th:replace="~{batch-admin/fragments :: footer}"></footer>
+</body>
+</html>

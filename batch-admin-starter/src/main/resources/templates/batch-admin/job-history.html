@@ -9,6 +9,8 @@
   <div class="toolbar">
     <a class="btn" th:href="@{|${basePath}/jobs|}">← Jobs</a>
     <a class="btn" th:href="@{|${basePath}/jobs/${jobName}/edit|}">✎ Edit</a>
+    <a class="btn" th:if="${versions.size() > 1}"
+       th:href="@{|${basePath}/jobs/${jobName}/diff|}">⇄ Compare versions</a>
   </div>
 
   <h3>Version history — <code th:text="${jobName}">jobName</code></h3>
