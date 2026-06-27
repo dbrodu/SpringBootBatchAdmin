@@ -5,12 +5,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.batchadmin.autoconfigure.BatchAdminProperties;
 import io.batchadmin.domain.JobTriggerDao;
 import io.batchadmin.domain.JobTriggerRecord;
+import io.batchadmin.web.dto.JobGraph;
 import io.batchadmin.web.dto.JobTriggerInfo;
 import io.batchadmin.web.dto.JobTriggerRequest;
 import io.batchadmin.web.dto.StartJobRequest;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.batch.core.BatchStatus;
@@ -55,6 +62,86 @@ public class JobTriggerService {
 
     public JobTriggerInfo getTrigger(long id) {
         return toInfo(require(id));
+    }
+
+    /**
+     * Lays out the trigger graph (jobs as nodes, triggers as directed edges) with a simple
+     * longest-path layering, so it can be drawn as an SVG. Cycle-safe: the relaxation is bounded by
+     * the node count.
+     */
+    public JobGraph buildGraph() {
+        List<JobTriggerRecord> triggers = triggerDao.findAll();
+        LinkedHashSet<String> nodeNames = new LinkedHashSet<>();
+        for (JobTriggerRecord trigger : triggers) {
+            nodeNames.add(trigger.sourceJob());
+            nodeNames.add(trigger.targetJob());
+        }
+
+        Map<String, Integer> level = new HashMap<>();
+        for (String name : nodeNames) {
+            level.put(name, 0);
+        }
+        for (int iteration = 0; iteration < nodeNames.size(); iteration++) {
+            boolean changed = false;
+            for (JobTriggerRecord trigger : triggers) {
+                int candidate = level.get(trigger.sourceJob()) + 1;
+                if (candidate > level.get(trigger.targetJob())) {
+                    level.put(trigger.targetJob(), candidate);
+                    changed = true;
+                }
+            }
+            if (!changed) {
+                break;
+            }
+        }
+
+        Map<Integer, List<String>> byLevel = new TreeMap<>();
+        for (String name : nodeNames) {
+            byLevel.computeIfAbsent(level.get(name), key -> new ArrayList<>()).add(name);
+        }
+        byLevel.values().forEach(column -> column.sort(Comparator.naturalOrder()));
+
+        int nodeW = 170;
+        int nodeH = 42;
+        int pitchX = nodeW + 80;
+        int pitchY = nodeH + 30;
+        int margin = 24;
+        Map<String, JobGraph.Node> nodes = new LinkedHashMap<>();
+        int maxRows = 0;
+        for (Map.Entry<Integer, List<String>> entry : byLevel.entrySet()) {
+            List<String> column = entry.getValue();
+            maxRows = Math.max(maxRows, column.size());
+            for (int row = 0; row < column.size(); row++) {
+                String name = column.get(row);
+                int x = margin + entry.getKey() * pitchX;
+                int y = margin + row * pitchY;
+                nodes.put(name, new JobGraph.Node(name, truncate(name, 22), x, y, nodeW, nodeH));
+            }
+        }
+
+        List<JobGraph.Edge> edges = new ArrayList<>();
+        for (JobTriggerRecord trigger : triggers) {
+            JobGraph.Node source = nodes.get(trigger.sourceJob());
+            JobGraph.Node target = nodes.get(trigger.targetJob());
+            if (source == null || target == null) {
+                continue;
+            }
+            int x1 = source.x() + source.w();
+            int y1 = source.y() + source.h() / 2;
+            int x2 = target.x();
+            int y2 = target.y() + target.h() / 2;
+            edges.add(new JobGraph.Edge(trigger.sourceJob(), trigger.targetJob(), trigger.condition(),
+                    trigger.enabled(), x1, y1, x2, y2, (x1 + x2) / 2, (y1 + y2) / 2 - 6));
+        }
+
+        int levels = byLevel.isEmpty() ? 0 : Collections.max(byLevel.keySet()) + 1;
+        int width = Math.max(220, margin * 2 + (levels == 0 ? 0 : (levels - 1) * pitchX + nodeW));
+        int height = Math.max(90, margin * 2 + (maxRows == 0 ? 0 : (maxRows - 1) * pitchY + nodeH));
+        return new JobGraph(width, height, new ArrayList<>(nodes.values()), edges);
+    }
+
+    private static String truncate(String value, int max) {
+        return value.length() <= max ? value : value.substring(0, max - 1) + "…";
     }
 
     public JobTriggerInfo createTrigger(JobTriggerRequest request) {

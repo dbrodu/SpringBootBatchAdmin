@@ -6,6 +6,10 @@
 <main class="app-main">
   <div th:replace="~{batch-admin/fragments :: banner}"></div>
 
+  <div class="toolbar" th:if="${not triggers.isEmpty()}">
+    <a class="btn" th:href="@{|${basePath}/pipelines/graph|}">⤳ View as graph</a>
+  </div>
+
   <form class="panel" th:action="@{|${basePath}/pipelines|}" method="post">
     <h3>Chain a job to another</h3>
     <p class="muted">When the source job finishes, the target job is launched automatically. Build
