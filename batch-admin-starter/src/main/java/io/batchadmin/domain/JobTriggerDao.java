@@ -26,6 +26,8 @@ public class JobTriggerDao {
             rs.getString("TARGET_JOB"),
             rs.getString("CONDITION_TYPE"),
             rs.getBoolean("ENABLED"),
+            rs.getBoolean("INHERIT_PARAMS"),
+            rs.getString("PARAMETERS_JSON"),
             rs.getString("DESCRIPTION"),
             toInstant(rs.getTimestamp("CREATED_AT")));
 
@@ -36,26 +38,30 @@ public class JobTriggerDao {
     }
 
     public JobTriggerRecord insert(String sourceJob, String targetJob, String condition,
-                                   boolean enabled, String description) {
+                                   boolean enabled, boolean inheritParams, String parametersJson,
+                                   String description) {
         Timestamp now = Timestamp.from(Instant.now());
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbc.update(connection -> {
             PreparedStatement ps = connection.prepareStatement(
                     "INSERT INTO " + TABLE
-                            + " (SOURCE_JOB, TARGET_JOB, CONDITION_TYPE, ENABLED, DESCRIPTION, CREATED_AT)"
-                            + " VALUES (?, ?, ?, ?, ?, ?)",
+                            + " (SOURCE_JOB, TARGET_JOB, CONDITION_TYPE, ENABLED, INHERIT_PARAMS,"
+                            + " PARAMETERS_JSON, DESCRIPTION, CREATED_AT) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, sourceJob);
             ps.setString(2, targetJob);
             ps.setString(3, condition);
             ps.setBoolean(4, enabled);
-            ps.setString(5, description);
-            ps.setTimestamp(6, now);
+            ps.setBoolean(5, inheritParams);
+            ps.setString(6, parametersJson);
+            ps.setString(7, description);
+            ps.setTimestamp(8, now);
             return ps;
         }, keyHolder);
         Number key = keyHolder.getKey();
         Long id = key != null ? key.longValue() : null;
-        return new JobTriggerRecord(id, sourceJob, targetJob, condition, enabled, description, now.toInstant());
+        return new JobTriggerRecord(id, sourceJob, targetJob, condition, enabled, inheritParams,
+                parametersJson, description, now.toInstant());
     }
 
     public void setEnabled(long id, boolean enabled) {

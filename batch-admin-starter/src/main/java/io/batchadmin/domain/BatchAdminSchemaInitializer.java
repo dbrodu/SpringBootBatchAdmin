@@ -74,9 +74,16 @@ public class BatchAdminSchemaInitializer {
                     TARGET_JOB VARCHAR(200) NOT NULL,
                     CONDITION_TYPE VARCHAR(20) NOT NULL,
                     ENABLED BOOLEAN NOT NULL,
+                    INHERIT_PARAMS BOOLEAN DEFAULT FALSE NOT NULL,
+                    PARAMETERS_JSON VARCHAR(2000),
                     DESCRIPTION VARCHAR(1000),
                     CREATED_AT TIMESTAMP NOT NULL
                 )""".formatted(identity));
+
+        // Parameter-passing columns were added after the trigger table shipped: add them to
+        // pre-existing tables (no-op when the table was just created above).
+        addColumnIfMissing("BATCH_ADMIN_JOB_TRIGGER", "INHERIT_PARAMS", "BOOLEAN DEFAULT FALSE NOT NULL");
+        addColumnIfMissing("BATCH_ADMIN_JOB_TRIGGER", "PARAMETERS_JSON", "VARCHAR(2000)");
 
         log.info("[batch-admin] Schema ready (database: {})", product.isBlank() ? "unknown" : product);
     }

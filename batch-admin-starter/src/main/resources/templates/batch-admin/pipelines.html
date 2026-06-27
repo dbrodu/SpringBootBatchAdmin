@@ -28,17 +28,34 @@
       <input name="description" placeholder="description (optional)"/>
       <button type="submit" class="btn btn-primary">Add trigger</button>
     </div>
+    <label style="display:inline-flex; align-items:center; gap:6px; margin-top:10px">
+      <input type="checkbox" name="inheritParams" value="true"/>
+      <span>Forward the source job's parameters to the target</span>
+    </label>
+    <label class="field" style="max-width:680px; margin-top:8px">
+      <span>Extra parameters for the target (optional)</span>
+      <textarea name="parameters" placeholder="region=EU&#10;mode=full"></textarea>
+      <span class="hint">One <code>key=value</code> per line. These override forwarded parameters on a
+        name clash.</span>
+    </label>
   </form>
 
   <table class="grid">
     <thead>
-      <tr><th>Source job</th><th>When</th><th>Target job</th><th>Description</th><th>Enabled</th><th>Actions</th></tr>
+      <tr><th>Source job</th><th>When</th><th>Target job</th><th>Parameters</th><th>Description</th>
+        <th>Enabled</th><th>Actions</th></tr>
     </thead>
     <tbody>
       <tr th:each="t : ${triggers}">
         <td><code th:text="${t.sourceJob()}">a</code></td>
         <td><span class="tag" th:text="${t.condition()}">SUCCESS</span></td>
         <td>→ <code th:text="${t.targetJob()}">b</code></td>
+        <td class="muted">
+          <span th:if="${t.inheritParams()}" class="tag">inherits</span>
+          <span th:if="${not t.parameters().isEmpty()}"
+                th:text="${@batchAdminFormat.params(t.parameters())}">region=EU</span>
+          <span th:if="${not t.inheritParams() and t.parameters().isEmpty()}">—</span>
+        </td>
         <td class="muted" th:text="${t.description() != null ? t.description() : '—'}">—</td>
         <td>
           <span class="badge" th:classappend="${t.enabled()} ? 'badge-ok' : 'badge-idle'"
@@ -54,7 +71,7 @@
           </form>
         </td>
       </tr>
-      <tr th:if="${triggers.isEmpty()}"><td colspan="6" class="muted">No triggers defined.</td></tr>
+      <tr th:if="${triggers.isEmpty()}"><td colspan="7" class="muted">No triggers defined.</td></tr>
     </tbody>
   </table>
 </main>

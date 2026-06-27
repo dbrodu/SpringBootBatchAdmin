@@ -49,7 +49,8 @@ class JobChainingIntegrationTest {
         createJob("chainA");
         createJob("chainB");
         ResponseEntity<JobTriggerInfo> created = rest.postForEntity(api("/triggers"),
-                new JobTriggerRequest("chainA", "chainB", "SUCCESS", true, "demo"), JobTriggerInfo.class);
+                new JobTriggerRequest("chainA", "chainB", "SUCCESS", true, false, null, "demo"),
+                JobTriggerInfo.class);
         assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(created.getBody().condition()).isEqualTo("SUCCESS");
 
@@ -64,10 +65,36 @@ class JobChainingIntegrationTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void triggerForwardsSourceParametersAndAddsStaticOnes() {
+        createJob("paramA");
+        createJob("paramB");
+        // Inherit the source's params and add a static one.
+        rest.postForEntity(api("/triggers"),
+                new JobTriggerRequest("paramA", "paramB", "SUCCESS", true, true,
+                        Map.of("mode", "full"), null), JobTriggerInfo.class);
+
+        // Launch the source with a parameter that should flow downstream.
+        rest.postForEntity(api("/jobs/paramA/executions"),
+                Map.of("parameters", Map.of("region", "EU")), ExecutionSummary.class);
+
+        Awaitility.await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
+            List<Map<String, Object>> bExecutions = executions("paramB");
+            assertThat(bExecutions).isNotEmpty();
+            Map<String, Object> latest = bExecutions.get(0);
+            assertThat(latest.get("status")).isEqualTo("COMPLETED");
+            Map<String, Object> params = (Map<String, Object>) latest.get("parameters");
+            assertThat(params).containsEntry("region", "EU");          // forwarded from the source
+            assertThat(params).containsEntry("mode", "full");           // static, defined on the trigger
+            assertThat(params).containsEntry("batchAdmin.chainSource", "paramA");
+        });
+    }
+
+    @Test
     void aJobCannotTriggerItself() {
         createJob("selfJob");
         ResponseEntity<String> response = rest.postForEntity(api("/triggers"),
-                new JobTriggerRequest("selfJob", "selfJob", "ANY", true, null), String.class);
+                new JobTriggerRequest("selfJob", "selfJob", "ANY", true, false, null, null), String.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
@@ -75,7 +102,7 @@ class JobChainingIntegrationTest {
     void aTriggerToAnUnknownJobIsRejected() {
         createJob("realJob");
         ResponseEntity<String> response = rest.postForEntity(api("/triggers"),
-                new JobTriggerRequest("realJob", "ghostJob", "SUCCESS", true, null), String.class);
+                new JobTriggerRequest("realJob", "ghostJob", "SUCCESS", true, false, null, null), String.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 
@@ -84,7 +111,8 @@ class JobChainingIntegrationTest {
         createJob("srcJob");
         createJob("dstJob");
         JobTriggerInfo trigger = rest.postForEntity(api("/triggers"),
-                new JobTriggerRequest("srcJob", "dstJob", "ANY", true, null), JobTriggerInfo.class).getBody();
+                new JobTriggerRequest("srcJob", "dstJob", "ANY", true, false, null, null),
+                JobTriggerInfo.class).getBody();
         assertThat(trigger).isNotNull();
 
         List<Map<String, Object>> all = rest.exchange(api("/triggers"), HttpMethod.GET, null,
