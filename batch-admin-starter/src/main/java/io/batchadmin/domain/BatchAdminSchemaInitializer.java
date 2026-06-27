@@ -86,6 +86,15 @@ public class BatchAdminSchemaInitializer {
         addColumnIfMissing("BATCH_ADMIN_JOB_TRIGGER", "PARAMETERS_JSON", "VARCHAR(2000)");
 
         jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS BATCH_ADMIN_SCHEDULE_LOCK (
+                    SCHEDULE_ID BIGINT NOT NULL,
+                    FIRE_SECOND BIGINT NOT NULL,
+                    INSTANCE_ID VARCHAR(200),
+                    CLAIMED_AT TIMESTAMP NOT NULL,
+                    PRIMARY KEY (SCHEDULE_ID, FIRE_SECOND)
+                )""");
+
+        jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS BATCH_ADMIN_ALERT_RULE (
                     ID %s PRIMARY KEY,
                     JOB_NAME VARCHAR(200) NOT NULL,

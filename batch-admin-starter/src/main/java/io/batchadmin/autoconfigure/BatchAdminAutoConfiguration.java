@@ -104,6 +104,13 @@ public class BatchAdminAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public io.batchadmin.domain.ScheduleLockDao scheduleLockDao(DataSource dataSource,
+                                                                BatchAdminSchemaInitializer schemaInitializer) {
+        return new io.batchadmin.domain.ScheduleLockDao(dataSource);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public io.batchadmin.domain.JobTriggerDao jobTriggerDao(DataSource dataSource,
                                                             BatchAdminSchemaInitializer schemaInitializer) {
         return new io.batchadmin.domain.JobTriggerDao(dataSource);
@@ -405,8 +412,11 @@ public class BatchAdminAutoConfiguration {
                 TaskScheduler taskScheduler,
                 JobScheduleDao jobScheduleDao,
                 JobAdminService jobAdminService,
-                ObjectMapper objectMapper) {
-            return new JobSchedulingService(taskScheduler, jobScheduleDao, jobAdminService, objectMapper);
+                ObjectMapper objectMapper,
+                io.batchadmin.domain.ScheduleLockDao scheduleLockDao,
+                BatchAdminProperties properties) {
+            return new JobSchedulingService(taskScheduler, jobScheduleDao, jobAdminService, objectMapper,
+                    scheduleLockDao, properties);
         }
 
         /**
