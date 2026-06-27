@@ -26,6 +26,10 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - REST: `GET/POST <base-path>/api/triggers`, `PUT …/{id}/enabled?value=`, `DELETE …/{id}`. A new
   **Pipelines** GUI screen lists, adds, enables/disables and removes triggers. Toggle the whole
   feature with `batch.admin.triggers.enabled` (default `true`). New `BATCH_ADMIN_JOB_TRIGGER` table.
+- **Visual pipeline graph** — `GET <base-path>/api/triggers/graph` returns the trigger graph laid out
+  (jobs as nodes, triggers as directed edges) with a longest-path layering, and a new *Pipeline graph*
+  GUI screen (linked from **Pipelines**) draws it as an inline SVG — arrows source→target labelled with
+  the condition, disabled triggers dashed. No client-side layout library.
 
 **Building blocks derived from existing jobs**
 - `ExistingStepCatalog` — automatically exposes the host's already-registered jobs as reusable

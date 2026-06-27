@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{batch-admin/fragments :: head('Batch Admin — Pipeline graph')}"></head>
+<body>
+<header th:replace="~{batch-admin/fragments :: nav('pipelines')}"></header>
+<main class="app-main">
+  <div th:replace="~{batch-admin/fragments :: banner}"></div>
+
+  <div class="toolbar">
+    <a class="btn" th:href="@{|${basePath}/pipelines|}">← Pipelines</a>
+  </div>
+
+  <h3>Pipeline graph</h3>
+  <p class="muted">Every job that takes part in a trigger, with an arrow from each source to the job it
+    launches. Edges are labelled with the firing condition; disabled triggers are dashed.</p>
+
+  <div th:if="${graph.nodes().isEmpty()}" class="panel">
+    <p class="muted">No triggers defined yet — add one on the <a th:href="@{|${basePath}/pipelines|}">Pipelines</a>
+      screen and the graph will appear here.</p>
+  </div>
+
+  <div th:unless="${graph.nodes().isEmpty()}" class="panel" style="overflow:auto">
+    <svg th:attr="width=${graph.width()},height=${graph.height()}"
+         th:viewBox="'0 0 ' + ${graph.width()} + ' ' + ${graph.height()}"
+         xmlns="http://www.w3.org/2000/svg" style="max-width:100%; height:auto">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+                orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--muted)"/>
+        </marker>
+      </defs>
+
+      <!-- edges first so nodes draw on top -->
+      <g th:each="e : ${graph.edges()}">
+        <path th:attr="d='M ' + ${e.x1()} + ' ' + ${e.y1()} + ' C ' + (${e.x1()} + 40) + ' ' + ${e.y1()}
+                       + ', ' + (${e.x2()} - 40) + ' ' + ${e.y2()} + ', ' + ${e.x2()} + ' ' + ${e.y2()}"
+              fill="none" stroke="var(--muted)" th:stroke-width="${e.enabled()} ? 1.6 : 1.2"
+              th:attrappend="stroke-dasharray=${e.enabled()} ? '' : '5 4'"
+              marker-end="url(#arrow)"></path>
+        <text th:attr="x=${e.labelX()},y=${e.labelY()}" text-anchor="middle"
+              font-size="10" fill="var(--muted-2)" th:text="${e.condition()}">SUCCESS</text>
+      </g>
+
+      <!-- nodes -->
+      <g th:each="n : ${graph.nodes()}">
+        <rect th:attr="x=${n.x()},y=${n.y()},width=${n.w()},height=${n.h()}" rx="9" ry="9"
+              fill="var(--surface-2)" stroke="var(--border-strong)" stroke-width="1"></rect>
+        <title th:text="${n.name()}">jobName</title>
+        <text th:attr="x=${n.x()} + ${n.w()} / 2,y=${n.y()} + ${n.h()} / 2 + 4" text-anchor="middle"
+              font-size="13" font-family="ui-monospace,Menlo,Consolas,monospace"
+              fill="var(--text)" th:text="${n.label()}">jobName</text>
+      </g>
+    </svg>
+  </div>
+</main>
+<footer th:replace="~{batch-admin/fragments :: footer}"></footer>
+</body>
+</html>

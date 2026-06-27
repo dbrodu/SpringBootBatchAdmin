@@ -252,6 +252,13 @@ public class BatchAdminViewController {
         return "batch-admin/pipelines";
     }
 
+    @GetMapping("/pipelines/graph")
+    public String pipelineGraph(Model model) {
+        model.addAttribute("active", "pipelines");
+        model.addAttribute("graph", triggerService.buildGraph());
+        return "batch-admin/job-graph";
+    }
+
     // ----------------------------------------------------------------------------------------
     // Job actions
     // ----------------------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 package io.batchadmin.web;
 
 import io.batchadmin.service.JobTriggerService;
+import io.batchadmin.web.dto.JobGraph;
 import io.batchadmin.web.dto.JobTriggerInfo;
 import io.batchadmin.web.dto.JobTriggerRequest;
 import java.util.List;
@@ -32,6 +33,12 @@ public class TriggerController {
     @GetMapping
     public List<JobTriggerInfo> list() {
         return triggerService.listTriggers();
+    }
+
+    /** The trigger graph (jobs as nodes, triggers as edges), laid out for drawing. */
+    @GetMapping("/graph")
+    public JobGraph graph() {
+        return triggerService.buildGraph();
     }
 
     @GetMapping("/{id}")

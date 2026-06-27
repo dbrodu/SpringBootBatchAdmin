@@ -91,6 +91,28 @@ class JobChainingIntegrationTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void theTriggerGraphExposesNodesEdgesAndRendersAsSvg() {
+        createJob("g1");
+        createJob("g2");
+        createJob("g3");
+        rest.postForEntity(api("/triggers"),
+                new JobTriggerRequest("g1", "g2", "SUCCESS", true, false, null, null), JobTriggerInfo.class);
+        rest.postForEntity(api("/triggers"),
+                new JobTriggerRequest("g2", "g3", "SUCCESS", true, false, null, null), JobTriggerInfo.class);
+
+        Map<String, Object> graph = rest.getForObject(api("/triggers/graph"), Map.class);
+        assertThat((List<Object>) graph.get("nodes")).hasSize(3);
+        assertThat((List<Object>) graph.get("edges")).hasSize(2);
+
+        String page = rest.getForObject("/batch-admin/pipelines/graph", String.class);
+        assertThat(page).contains("Pipeline graph");
+        assertThat(page).contains("<svg");
+        assertThat(page).contains("g1");
+        assertThat(page).contains("g3");
+    }
+
+    @Test
     void aJobCannotTriggerItself() {
         createJob("selfJob");
         ResponseEntity<String> response = rest.postForEntity(api("/triggers"),
