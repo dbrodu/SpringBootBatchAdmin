@@ -7,6 +7,7 @@ import io.batchadmin.service.DynamicJobService;
 import io.batchadmin.service.JobAdminService;
 import io.batchadmin.service.JobLogService;
 import io.batchadmin.service.JobSchedulingService;
+import io.batchadmin.service.JobTriggerService;
 import io.batchadmin.service.ObservabilityService;
 import io.batchadmin.web.dto.CreateJobRequest;
 import io.batchadmin.web.dto.ImportResult;
@@ -53,6 +54,7 @@ public class BatchAdminViewController {
     private final ObservabilityService observabilityService;
     private final ObjectProvider<JobSchedulingService> schedulingService;
     private final ObjectProvider<JobLogService> jobLogService;
+    private final JobTriggerService triggerService;
     private final String basePath;
 
     public BatchAdminViewController(JobAdminService jobAdminService,
@@ -60,12 +62,14 @@ public class BatchAdminViewController {
                                     ObservabilityService observabilityService,
                                     ObjectProvider<JobSchedulingService> schedulingService,
                                     ObjectProvider<JobLogService> jobLogService,
+                                    JobTriggerService triggerService,
                                     BatchAdminProperties properties) {
         this.jobAdminService = jobAdminService;
         this.dynamicJobService = dynamicJobService;
         this.observabilityService = observabilityService;
         this.schedulingService = schedulingService;
         this.jobLogService = jobLogService;
+        this.triggerService = triggerService;
         this.basePath = properties.getBasePath();
     }
 
@@ -238,6 +242,14 @@ public class BatchAdminViewController {
         model.addAttribute("schedules", scheduling != null ? scheduling.listSchedules() : List.of());
         model.addAttribute("jobs", jobAdminService.listJobs().stream().filter(j -> j.launchable()).toList());
         return "batch-admin/schedules";
+    }
+
+    @GetMapping("/pipelines")
+    public String pipelines(Model model) {
+        model.addAttribute("active", "pipelines");
+        model.addAttribute("triggers", triggerService.listTriggers());
+        model.addAttribute("jobs", jobAdminService.listJobs());
+        return "batch-admin/pipelines";
     }
 
     // ----------------------------------------------------------------------------------------
@@ -449,6 +461,43 @@ public class BatchAdminViewController {
             }
         }
         return redirect(redirect, "/schedules");
+    }
+
+    @PostMapping("/pipelines")
+    public String createTrigger(@RequestParam String sourceJob,
+                                @RequestParam String targetJob,
+                                @RequestParam(required = false) String condition,
+                                @RequestParam(required = false) String description,
+                                RedirectAttributes redirect) {
+        try {
+            triggerService.createTrigger(
+                    new io.batchadmin.web.dto.JobTriggerRequest(sourceJob, targetJob, condition, true, description));
+            flash(redirect, false, "Added trigger '" + sourceJob + "' → '" + targetJob + "'.");
+        } catch (BatchAdminException ex) {
+            flash(redirect, true, ex.getMessage());
+        }
+        return redirect(redirect, "/pipelines");
+    }
+
+    @PostMapping("/pipelines/{id}/toggle")
+    public String toggleTrigger(@PathVariable long id, RedirectAttributes redirect) {
+        try {
+            triggerService.setEnabled(id, !triggerService.getTrigger(id).enabled());
+        } catch (BatchAdminException ex) {
+            flash(redirect, true, ex.getMessage());
+        }
+        return redirect(redirect, "/pipelines");
+    }
+
+    @PostMapping("/pipelines/{id}/delete")
+    public String deleteTrigger(@PathVariable long id, RedirectAttributes redirect) {
+        try {
+            triggerService.deleteTrigger(id);
+            flash(redirect, false, "Removed trigger #" + id + ".");
+        } catch (BatchAdminException ex) {
+            flash(redirect, true, ex.getMessage());
+        }
+        return redirect(redirect, "/pipelines");
     }
 
     // ----------------------------------------------------------------------------------------

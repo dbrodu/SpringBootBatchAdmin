@@ -52,6 +52,9 @@ public class BatchAdminProperties {
     /** Pub/sub job-lifecycle events sub-configuration. */
     private final Events events = new Events();
 
+    /** Event-driven job chaining (run a job when another finishes). */
+    private final Triggers triggers = new Triggers();
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -108,6 +111,10 @@ public class BatchAdminProperties {
         return events;
     }
 
+    public Triggers getTriggers() {
+        return triggers;
+    }
+
     /** The API path is always the base path suffixed with {@code /api}. */
     public String getApiPath() {
         return basePath + "/api";
@@ -125,6 +132,32 @@ public class BatchAdminProperties {
             p = p.substring(0, p.length() - 1);
         }
         return p;
+    }
+
+    public static class Triggers {
+        /** Whether event-driven job chaining (run a job when another finishes) is enabled. */
+        private boolean enabled = true;
+        /**
+         * Safety cap on how deep a trigger chain may go (A→B→C→…), to bound run-away or cyclic
+         * chains. A launch beyond this depth is skipped and logged.
+         */
+        private int maxChainDepth = 25;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public int getMaxChainDepth() {
+            return maxChainDepth;
+        }
+
+        public void setMaxChainDepth(int maxChainDepth) {
+            this.maxChainDepth = maxChainDepth;
+        }
     }
 
     public static class Scheduling {

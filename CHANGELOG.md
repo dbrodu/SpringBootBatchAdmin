@@ -9,6 +9,19 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+**Job pipelines / chaining (event-driven)**
+- **Trigger one job from another** — define rules that launch a target job when a source job finishes
+  matching a condition (`SUCCESS` / `FAILURE` / `ANY`). Chains (A→B→C) and fan-out (A→B, A→C) fall out
+  naturally because every launched job is itself observed — the Spring Cloud Data Flow *composed-task*
+  capability, embedded. Triggers fire through a job listener attached to every administered job (host
+  and dynamic), so they work regardless of the configured event publisher.
+- A `batchAdmin.chainDepth` job parameter is threaded through each launch and **capped**
+  (`batch.admin.triggers.max-chain-depth`, default 25) so cyclic or run-away chains terminate; a job
+  may not trigger itself.
+- REST: `GET/POST <base-path>/api/triggers`, `PUT …/{id}/enabled?value=`, `DELETE …/{id}`. A new
+  **Pipelines** GUI screen lists, adds, enables/disables and removes triggers. Toggle the whole
+  feature with `batch.admin.triggers.enabled` (default `true`). New `BATCH_ADMIN_JOB_TRIGGER` table.
+
 **Building blocks derived from existing jobs**
 - `ExistingStepCatalog` — automatically exposes the host's already-registered jobs as reusable
   building blocks, at two granularities: each **step** (type `<stepName>`, or `<jobName>.<stepName>`

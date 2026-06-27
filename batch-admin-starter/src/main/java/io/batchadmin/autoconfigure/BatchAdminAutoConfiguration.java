@@ -102,6 +102,30 @@ public class BatchAdminAutoConfiguration {
         return new JobScheduleDao(dataSource);
     }
 
+    @Bean
+    @ConditionalOnMissingBean
+    public io.batchadmin.domain.JobTriggerDao jobTriggerDao(DataSource dataSource,
+                                                            BatchAdminSchemaInitializer schemaInitializer) {
+        return new io.batchadmin.domain.JobTriggerDao(dataSource);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public io.batchadmin.service.JobTriggerService jobTriggerService(
+            io.batchadmin.domain.JobTriggerDao jobTriggerDao,
+            JobAdminService jobAdminService,
+            BatchAdminProperties properties) {
+        return new io.batchadmin.service.JobTriggerService(jobTriggerDao, jobAdminService, properties);
+    }
+
+    /** Fires matching chaining rules when any administered job finishes; attached to every job. */
+    @Bean
+    @ConditionalOnMissingBean
+    public io.batchadmin.service.JobTriggerFiringListener jobTriggerFiringListener(
+            io.batchadmin.service.JobTriggerService jobTriggerService) {
+        return new io.batchadmin.service.JobTriggerFiringListener(jobTriggerService);
+    }
+
     // ----------------------------------------------------------------------------------------
     // Batch launch / operate infrastructure
     // ----------------------------------------------------------------------------------------
@@ -143,9 +167,10 @@ public class BatchAdminAutoConfiguration {
             JobRegistry jobRegistry,
             ObjectProvider<Job> jobs,
             ObjectProvider<io.batchadmin.logs.JobLogExecutionListener> logListener,
-            ObjectProvider<io.batchadmin.event.BatchEventPublishingListener> eventListener) {
+            ObjectProvider<io.batchadmin.event.BatchEventPublishingListener> eventListener,
+            ObjectProvider<io.batchadmin.service.JobTriggerFiringListener> triggerListener) {
         List<org.springframework.batch.core.JobExecutionListener> listeners =
-                componentJobListeners(logListener, eventListener);
+                componentJobListeners(logListener, eventListener, triggerListener);
         return () -> jobs.forEach(job -> {
             if (!listeners.isEmpty()
                     && job instanceof org.springframework.batch.core.job.AbstractJob abstractJob) {
@@ -252,18 +277,21 @@ public class BatchAdminAutoConfiguration {
                                                BatchAdminProperties properties,
                                                ObjectProvider<io.batchadmin.logs.JobLogExecutionListener> logListener,
                                                ObjectProvider<io.batchadmin.event.BatchEventPublishingListener> eventListener,
+                                               ObjectProvider<io.batchadmin.service.JobTriggerFiringListener> triggerListener,
                                                io.batchadmin.metadata.ValueResolver valueResolver,
                                                io.batchadmin.dynamic.ExistingStepCatalog existingStepCatalog) {
         return new DynamicJobService(jobRegistry, jobRepository, transactionManager, jobDefinitionDao,
                 jobDefinitionVersionDao, providers, stepProviders, objectMapper, properties,
-                componentJobListeners(logListener, eventListener), valueResolver, existingStepCatalog);
+                componentJobListeners(logListener, eventListener, triggerListener), valueResolver,
+                existingStepCatalog);
     }
 
-    /** Component-owned job listeners (log capture, event publishing) attached to every job. */
+    /** Component-owned job listeners (log capture, event publishing, trigger firing) on every job. */
     private static List<org.springframework.batch.core.JobExecutionListener> componentJobListeners(
             ObjectProvider<io.batchadmin.logs.JobLogExecutionListener> logListener,
-            ObjectProvider<io.batchadmin.event.BatchEventPublishingListener> eventListener) {
-        List<org.springframework.batch.core.JobExecutionListener> listeners = new java.util.ArrayList<>(2);
+            ObjectProvider<io.batchadmin.event.BatchEventPublishingListener> eventListener,
+            ObjectProvider<io.batchadmin.service.JobTriggerFiringListener> triggerListener) {
+        List<org.springframework.batch.core.JobExecutionListener> listeners = new java.util.ArrayList<>(3);
         org.springframework.batch.core.JobExecutionListener log = logListener.getIfAvailable();
         if (log != null) {
             listeners.add(log);
@@ -271,6 +299,10 @@ public class BatchAdminAutoConfiguration {
         org.springframework.batch.core.JobExecutionListener events = eventListener.getIfAvailable();
         if (events != null) {
             listeners.add(events);
+        }
+        org.springframework.batch.core.JobExecutionListener triggers = triggerListener.getIfAvailable();
+        if (triggers != null) {
+            listeners.add(triggers);
         }
         return listeners;
     }
@@ -358,6 +390,12 @@ public class BatchAdminAutoConfiguration {
         }
 
         @Bean
+        public io.batchadmin.web.TriggerController batchAdminTriggerController(
+                io.batchadmin.service.JobTriggerService jobTriggerService) {
+            return new io.batchadmin.web.TriggerController(jobTriggerService);
+        }
+
+        @Bean
         public ExecutionController batchAdminExecutionController(JobAdminService jobAdminService) {
             return new ExecutionController(jobAdminService);
         }
@@ -389,9 +427,10 @@ public class BatchAdminAutoConfiguration {
                 ObservabilityService observabilityService,
                 org.springframework.beans.factory.ObjectProvider<JobSchedulingService> schedulingService,
                 org.springframework.beans.factory.ObjectProvider<io.batchadmin.service.JobLogService> jobLogService,
+                io.batchadmin.service.JobTriggerService jobTriggerService,
                 BatchAdminProperties properties) {
             return new BatchAdminViewController(jobAdminService, dynamicJobService, observabilityService,
-                    schedulingService, jobLogService, properties);
+                    schedulingService, jobLogService, jobTriggerService, properties);
         }
     }
 
