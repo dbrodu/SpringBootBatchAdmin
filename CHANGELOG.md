@@ -9,6 +9,19 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+**Failure / SLA alerting**
+- **Get notified when a job fails or overruns** — persisted alert rules raise an alert when a matching
+  job finishes in a failure status (`FAILURE`) or exceeds an SLA duration threshold (`DURATION`). A rule
+  targets a specific job or every job (`*`).
+- Alerts are delivered through **pluggable channels** — `LOG` (always on) and `WEBHOOK` (POSTs the
+  alert as JSON, for Slack/Teams/any HTTP receiver) ship in the box; host apps can register an
+  `AlertChannel` bean for other transports (email, PagerDuty, …). Delivery failures never break the
+  observed job. The most recently fired alerts are kept in memory for the GUI/API.
+- REST: `GET/POST <base-path>/api/alerts`, `GET …/recent`, `PUT …/{id}/enabled?value=`,
+  `POST …/{id}/test` (send a synthetic alert to verify a channel), `DELETE …/{id}`. A new **Alerts**
+  GUI screen manages rules and shows recent alerts. Toggle with `batch.admin.alerts.enabled`
+  (default `true`). New `BATCH_ADMIN_ALERT_RULE` table.
+
 **Job pipelines / chaining (event-driven)**
 - **Trigger one job from another** — define rules that launch a target job when a source job finishes
   matching a condition (`SUCCESS` / `FAILURE` / `ANY`). Chains (A→B→C) and fan-out (A→B, A→C) fall out

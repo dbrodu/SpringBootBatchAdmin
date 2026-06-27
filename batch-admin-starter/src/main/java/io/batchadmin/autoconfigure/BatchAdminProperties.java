@@ -55,6 +55,9 @@ public class BatchAdminProperties {
     /** Event-driven job chaining (run a job when another finishes). */
     private final Triggers triggers = new Triggers();
 
+    /** Failure / SLA alerting (notify when a job fails or overruns). */
+    private final Alerts alerts = new Alerts();
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -115,6 +118,10 @@ public class BatchAdminProperties {
         return triggers;
     }
 
+    public Alerts getAlerts() {
+        return alerts;
+    }
+
     /** The API path is always the base path suffixed with {@code /api}. */
     public String getApiPath() {
         return basePath + "/api";
@@ -132,6 +139,29 @@ public class BatchAdminProperties {
             p = p.substring(0, p.length() - 1);
         }
         return p;
+    }
+
+    public static class Alerts {
+        /** Whether failure / SLA alerting is enabled. */
+        private boolean enabled = true;
+        /** How many recently fired alerts to keep in memory for the GUI/API. */
+        private int recentBufferSize = 100;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public int getRecentBufferSize() {
+            return recentBufferSize;
+        }
+
+        public void setRecentBufferSize(int recentBufferSize) {
+            this.recentBufferSize = recentBufferSize;
+        }
     }
 
     public static class Triggers {
